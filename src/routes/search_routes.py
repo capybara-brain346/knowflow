@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Query
 from typing import Optional
 
-from models.request import SearchParams, SearchSuggestionParams, RecentSearchParams
-from models.response import (
+from src.models.request import SearchParams, SearchSuggestionParams, RecentSearchParams
+from src.models.response import (
     SearchResponse,
     SearchSuggestionResponse,
     RecentSearchResponse,

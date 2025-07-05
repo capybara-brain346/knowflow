@@ -2,7 +2,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -36,6 +37,13 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = Field(default="sqlite:///./knowflow.db", env="DATABASE_URL")
+
+    # Rate Limiting
+    RATE_LIMIT_CALLS: int = Field(default=100, env="RATE_LIMIT_CALLS")
+    RATE_LIMIT_PERIOD: int = Field(default=60, env="RATE_LIMIT_PERIOD")
+    RATE_LIMIT_EXCLUDED_PATHS: set[str] = Field(
+        default={"/health", "/health/detailed"}, env="RATE_LIMIT_EXCLUDED_PATHS"
+    )
 
     class Config:
         env_file = ".env"

@@ -1,37 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.config import settings
-from core.logging import logger
-from routes import auth_routes, search_routes
+from src.core.config import settings
+from src.core.logging import logger
+from src.routes import auth_routes, search_routes
+from core.middleware import setup_middleware
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Setup middleware
+setup_middleware(app)
 
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Starting up KnowFlow API")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down KnowFlow API")
-
-
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def health_check():
     return {
         "status": "healthy",
@@ -40,7 +24,7 @@ async def health_check():
     }
 
 
-@app.get("/health/detailed")
+@app.get("/health/detailed", tags=["Health"])
 async def detailed_health_check():
     return {
         "status": "healthy",

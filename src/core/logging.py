@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from core.config import settings
+from src.core.config import settings
 
 
 class CustomFormatter(logging.Formatter):
@@ -26,12 +26,12 @@ class CustomFormatter(logging.Formatter):
 
 
 def setup_logger(
-    name: str = "knowflow",
-    log_file: Optional[str] = None,
-    level: int = logging.INFO,
-    rotation: str = "midnight",
-    retention: int = 30,
-    format_string: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    name: str = settings.PROJECT_NAME,
+    log_file: Optional[str] = settings.LOG_FILE,
+    level: int = getattr(logging, settings.LOG_LEVEL.upper()),
+    rotation: str = settings.LOG_ROTATION,
+    retention: int = settings.LOG_RETENTION,
+    format_string: str = settings.LOG_FORMAT,
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -71,4 +71,4 @@ def setup_logger(
     return logger
 
 
-logger = setup_logger(name="knowflow", log_file="logs/knowflow.log", level=logging.INFO)
+logger = setup_logger()

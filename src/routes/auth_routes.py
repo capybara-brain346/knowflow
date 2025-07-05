@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
-from models.request import UserLogin, UserRegister
-from models.response import (
+from src.models.request import UserLogin, UserRegister
+from src.models.response import (
     TokenResponse,
     UserResponse,
     RegisterResponse,
