@@ -8,15 +8,15 @@ This document details the AI subsystems of the project, combining Retrieval-Augm
 
 Traditional RAG combines neural retrieval with LLMs by embedding a user query and searching a vector database for relevant chunks of unstructured text. However, this approach lacks structure and reasoning. This project enhances the standard RAG architecture with a **Knowledge Graph**, allowing retrieval over both:
 
-* **Dense semantic embeddings** (via vector DB)
-* **Structured graph traversal** (via graph DB like Neo4j or TigerGraph)
+- **Dense semantic embeddings** (via vector DB)
+- **Structured graph traversal** (via graph DB like Neo4j or TigerGraph)
 
 The hybrid approach enables:
 
-* More accurate retrieval of long or structured content
-* Multi-hop reasoning over connected concepts
-* Explainability through graph node tracing
-* Semantic + relational retrieval synergy
+- More accurate retrieval of long or structured content
+- Multi-hop reasoning over connected concepts
+- Explainability through graph node tracing
+- Semantic + relational retrieval synergy
 
 ---
 
@@ -26,24 +26,24 @@ The hybrid approach enables:
 
 1. **Document Ingestion**
 
-   * Load documents (tickets, FAQs, etc.) using LangChain `DocumentLoader`.
-   * Chunk large documents using `RecursiveCharacterTextSplitter` or custom chunkers.
+   - Load documents (tickets, FAQs, etc.) using LangChain `DocumentLoader`.
+   - Chunk large documents using `RecursiveCharacterTextSplitter` or custom chunkers.
 
 2. **Graph Construction**
 
-   * Use `LLMGraphTransformer` (LangChain) to extract structured fields, relations, and entities.
-   * Build a hierarchical intra-document graph (e.g. sections of a support ticket).
-   * Add inter-document edges via metadata (e.g. "cloned from") or embedding similarity.
+   - Use `LLMGraphTransformer` (LangChain) to extract structured fields, relations, and entities.
+   - Build a hierarchical intra-document graph (e.g. sections of a support ticket).
+   - Add inter-document edges via metadata (e.g. "cloned from") or embedding similarity.
 
 3. **Embedding Storage**
 
-   * Embed text of graph nodes (e.g. ticket summaries, steps) using models like `OpenAIEmbeddings` or `E5`.
-   * Store embeddings in a vector DB (e.g. Qdrant, FAISS).
+   - Embed text of graph nodes (e.g. ticket summaries, steps) using models like `OpenAIEmbeddings` or `E5`.
+   - Store embeddings in a vector DB (e.g. Qdrant, FAISS).
 
 4. **Graph Storage**
 
-   * Insert nodes and edges into a graph database (`Neo4jGraph.add_graph_documents()`).
-   * Optionally use `Neo4jVector.from_existing_graph()` to create vector indexes over graph content.
+   - Insert nodes and edges into a graph database (`Neo4jGraph.add_graph_documents()`).
+   - Optionally use `Neo4jVector.from_existing_graph()` to create vector indexes over graph content.
 
 ---
 
@@ -51,22 +51,23 @@ The hybrid approach enables:
 
 1. **Query Understanding**
 
-   * Perform Named Entity Recognition (NER) or LLM parsing to extract:
+   - Perform Named Entity Recognition (NER) or LLM parsing to extract:
 
-     * Entities (e.g. issue = "login error")
-     * Intent (e.g. fix instructions)
-   * Used to construct filters and match against KG nodes.
+     - Entities (e.g. issue = "login error")
+     - Intent (e.g. fix instructions)
+
+   - Used to construct filters and match against KG nodes.
 
 2. **Hybrid Retrieval**
 
-   * **Vector Search**: Query embedding retrieves top-K nodes based on semantic similarity.
-   * **Graph Traversal**: Query is transformed into a graph query (e.g. Cypher) to extract exact subgraphs or fields (e.g. “steps to reproduce” for Ticket X).
-   * **Combined**: Merge results from both strategies for richer context.
+   - **Vector Search**: Query embedding retrieves top-K nodes based on semantic similarity.
+   - **Graph Traversal**: Query is transformed into a graph query (e.g. Cypher) to extract exact subgraphs or fields (e.g. “steps to reproduce” for Ticket X).
+   - **Combined**: Merge results from both strategies for richer context.
 
 3. **Answer Generation**
 
-   * Pass retrieved graph fields and vector chunks to an LLM (e.g. GPT-4) via a prompt template.
-   * If graph fails or yields low-confidence results, fallback to pure vector-based RAG.
+   - Pass retrieved graph fields and vector chunks to an LLM (e.g. GPT-4) via a prompt template.
+   - If graph fails or yields low-confidence results, fallback to pure vector-based RAG.
 
 ---
 
@@ -86,44 +87,43 @@ The hybrid approach enables:
 
 ---
 
-## 4. Sample Code Snippet
+## 4. Advanced Features
 
-```python
-from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain_neo4j import Neo4jGraph
+### 4.1 Explainability Mode ("Why this answer?")
 
-# Initialize vector retriever
-embeddings = OpenAIEmbeddings()
-vector_store = FAISS.load_local("faiss_index", embeddings)
-retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+To increase trust and transparency, the system supports an explainability feature that reveals the inner workings of the AI pipeline.
 
-# LLM for final QA
-qa = RetrievalQA.from_chain_type(llm=ChatOpenAI(temperature=0), retriever=retriever)
+**What it includes:**
 
-# Graph query step
-graph = Neo4jGraph(uri="bolt://localhost:7687", user="neo4j", password="pw")
-cypher = "MATCH (t:Ticket {id: 'ENT-22970'})-[:HAS_SOLUTION]->(s) RETURN s.value"
-graph_answer = graph.query(cypher)[0]['s.value']
+- List of graph nodes and vector chunks used
+- Vector similarity scores (e.g., cosine distance)
+- Graph paths or Cypher queries executed
+- The exact prompt fed into the LLM, including retrieved context
 
-# Final output
-query = "How to fix the login issue where users can't log in?"
-response = qa.run(query)
-print(graph_answer + "\n\n" + response)
-```
+This mode helps users understand why a particular answer was given, supports debugging and validation, and makes the system suitable for high-assurance environments.
+
+### 4.2 Conversational Memory with Graph Context
+
+The system maintains conversational memory with awareness of previously mentioned graph entities.
+
+**How it works:**
+
+- Stores the history of referenced KG nodes per session (e.g., a specific support ticket ID)
+- For follow-up queries, reuses and prioritizes nodes and their neighbors (e.g., next steps, causes, resolutions)
+- Retrieval is guided not only by semantic similarity but also by graph relationships to the prior context
+
+This creates a more natural, multi-turn conversation experience grounded in structured knowledge.
 
 ---
 
 ## 5. Best Practices for Enterprise Use
 
-* **Freshness**: Integrate ingestion pipelines or webhooks (e.g. Jira or CRM) to keep KG updated.
-* **Fallback Mechanism**: Always support pure RAG fallback if graph-based query fails.
-* **Monitoring**: Track retrieval scores (e.g. MRR) and token-level generation quality (e.g. BLEU).
-* **Explainability**: Return graph node IDs or paths used for answer generation.
-* **Guardrails**: Use KG to constrain LLM outputs with known facts (e.g. only generate answers with cited nodes).
-* **Scaling**: Shard vector stores (e.g. Qdrant cluster) and graph DBs for large orgs.
+- **Freshness**: Integrate ingestion pipelines or webhooks (e.g. Jira or CRM) to keep KG updated.
+- **Fallback Mechanism**: Always support pure RAG fallback if graph-based query fails.
+- **Monitoring**: Track retrieval scores (e.g. MRR) and token-level generation quality (e.g. BLEU).
+- **Explainability**: Return graph node IDs or paths used for answer generation.
+- **Guardrails**: Use KG to constrain LLM outputs with known facts (e.g. only generate answers with cited nodes).
+- **Scaling**: Shard vector stores (e.g. Qdrant cluster) and graph DBs for large orgs.
 
 ---
 
@@ -131,9 +131,12 @@ print(graph_answer + "\n\n" + response)
 
 This AI subsystem combines the semantic breadth of vector-based RAG with the precision and reasoning capabilities of Knowledge Graphs. It enables:
 
-* Multi-hop retrieval across structured data
-* Better alignment with enterprise knowledge
-* Enhanced trust through explainable sources
+- Multi-hop retrieval across structured data
+- Better alignment with enterprise knowledge
+- Enhanced trust through explainable sources
 
 By using LangChain’s modular tooling, this architecture remains flexible, debuggable, and production-ready.
 
+```
+
+```
