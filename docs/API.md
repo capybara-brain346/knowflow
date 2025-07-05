@@ -2,13 +2,49 @@
 
 ## Overview
 
-KnowFlow provides a RESTful API for hybrid search combining vector similarity and knowledge graph traversal.
+KnowFlow provides a RESTful API built with FastAPI for hybrid search combining vector similarity and knowledge graph traversal.
+
+## API Documentation
+
+Interactive API documentation is available at:
+
+- Swagger UI: `http://api.knowflow.com/docs`
+- ReDoc: `http://api.knowflow.com/redoc`
 
 ## Base URL
 
 ```
 Production: https://api.knowflow.com/v1
 Staging: https://api-staging.knowflow.com/v1
+```
+
+## FastAPI Implementation Details
+
+### Dependencies
+
+```python
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr
+```
+
+### Models
+
+```python
+class UserBase(BaseModel):
+    email: EmailStr
+    name: str
+
+class UserCreate(UserBase):
+    password: str
+
+class User(UserBase):
+    id: str
+    role: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 ```
 
 ## Authentication
@@ -19,21 +55,184 @@ All API requests require a Bearer token in the Authorization header:
 Authorization: Bearer <your_api_key>
 ```
 
-## Rate Limiting
+FastAPI OAuth2 implementation with JWT tokens.
 
-- Free tier: 100 requests/hour
-- Pro tier: 1000 requests/hour
-- Enterprise: Custom limits
+## User Authentication & Management
 
-## API Endpoints
+### Register User
 
-### Search
+`POST /auth/register`
 
-#### Hybrid Search
+FastAPI Route:
+
+```python
+@app.post("/auth/register", response_model=User)
+async def register_user(user: UserCreate):
+    # Implementation details
+```
+
+**Request Body:**
+
+```json
+{
+  "email": "string",
+  "password": "string",
+  "name": "string"
+}
+```
+
+**Response:**
+
+```json
+{
+  "user_id": "string",
+  "email": "string",
+  "name": "string",
+  "role": "user",
+  "created_at": "2024-03-20T12:00:00Z"
+}
+```
+
+### Login
+
+`POST /auth/login`
+
+FastAPI Route:
+
+```python
+@app.post("/auth/login")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Implementation details
+```
+
+**Request Body:**
+
+```json
+{
+  "email": "string",
+  "password": "string"
+}
+```
+
+**Response:**
+
+```json
+{
+  "access_token": "string",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "string",
+  "user": {
+    "id": "string",
+    "email": "string",
+    "name": "string",
+    "role": "user|admin"
+  }
+}
+```
+
+### Refresh Token
+
+`POST /auth/refresh`
+
+FastAPI Route:
+
+```python
+@app.post("/auth/refresh")
+async def refresh_token(refresh_token: str = Body(...)):
+    # Implementation details
+```
+
+**Request Body:**
+
+```json
+{
+  "refresh_token": "string"
+}
+```
+
+**Response:**
+
+```json
+{
+  "access_token": "string",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+### Admin Routes
+
+#### Create Admin User
+
+`POST /auth/admin/create`
+
+FastAPI Route:
+
+```python
+@app.post("/auth/admin/create", dependencies=[Depends(admin_required)])
+async def create_admin(user: UserCreate):
+    # Implementation details
+```
+
+Requires existing admin authentication.
+
+**Request Body:**
+
+```json
+{
+  "email": "string",
+  "password": "string",
+  "name": "string"
+}
+```
+
+#### List Users
+
+`GET /auth/admin/users`
+
+FastAPI Route:
+
+```python
+@app.get("/auth/admin/users", dependencies=[Depends(admin_required)])
+async def list_users(skip: int = 0, limit: int = 100):
+    # Implementation details
+```
+
+Requires admin authentication.
+
+**Response:**
+
+```json
+{
+  "users": [
+    {
+      "id": "string",
+      "email": "string",
+      "name": "string",
+      "role": "user|admin",
+      "created_at": "2024-03-20T12:00:00Z",
+      "last_login": "2024-03-20T12:00:00Z"
+    }
+  ],
+  "total": 100,
+  "page": 1
+}
+```
+
+## Search Endpoints
+
+### Hybrid Search
 
 `POST /search/hybrid`
 
-Performs combined vector and graph-based search.
+FastAPI Route:
+
+```python
+@app.post("/search/hybrid", dependencies=[Depends(get_current_user)])
+async def hybrid_search(query: SearchQuery):
+    # Implementation details
+```
 
 **Request Body:**
 
@@ -51,43 +250,28 @@ Performs combined vector and graph-based search.
 }
 ```
 
-**Response:**
+## Document Management
 
-```json
-{
-  "results": [
-    {
-      "id": "string",
-      "title": "string",
-      "content": "string",
-      "relevance_score": 0.95,
-      "source": "vector|graph|hybrid",
-      "metadata": {}
-    }
-  ],
-  "total": 100,
-  "page": 1
-}
-```
-
-### Document Management
-
-#### Upload Document
+### Upload Document
 
 `POST /documents/upload`
 
-**Request Body:**
+FastAPI Route:
 
-```json
-{
-  "content": "string",
-  "metadata": {
-    "title": "string",
-    "author": "string",
-    "tags": ["string"]
-  }
-}
+```python
+@app.post("/documents/upload", dependencies=[Depends(admin_required)])
+async def upload_document(
+    file: UploadFile,
+    metadata: DocumentMetadata = Depends()
+):
+    # Implementation details
 ```
+
+**Request Body:**
+Multipart form data with:
+
+- File
+- Metadata JSON
 
 **Response:**
 
@@ -100,57 +284,23 @@ Performs combined vector and graph-based search.
 }
 ```
 
-### Knowledge Graph
-
-#### Query Graph
-
-`POST /graph/query`
-
-**Request Body:**
-
-```json
-{
-  "query": "MATCH (n)-[r]->(m) WHERE n.type = 'concept' RETURN n, r, m LIMIT 10",
-  "parameters": {}
-}
-```
-
-### Vector Operations
-
-#### Similarity Search
-
-`POST /vectors/search`
-
-**Request Body:**
-
-```json
-{
-  "query_vector": [0.1, 0.2, ...],
-  "top_k": 10
-}
-```
-
-### Health Check
-
-#### System Status
-
-`GET /health`
-
-**Response:**
-
-```json
-{
-  "status": "healthy",
-  "components": {
-    "database": "up",
-    "vector_store": "up",
-    "graph_store": "up",
-    "llm_service": "up"
-  }
-}
-```
-
 ## Error Handling
+
+FastAPI automatic error responses:
+
+```python
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.status_code,
+                "message": exc.detail
+            }
+        }
+    )
+```
 
 All errors follow this format:
 
@@ -164,41 +314,47 @@ All errors follow this format:
 }
 ```
 
-Common Error Codes:
+## Rate Limiting
 
-- `400`: Bad Request
-- `401`: Unauthorized
-- `403`: Forbidden
-- `404`: Not Found
-- `429`: Too Many Requests
-- `500`: Internal Server Error
+Using FastAPI middleware:
 
-## Webhooks
-
-### Document Processing Status
-
-`POST <your_webhook_url>`
-
-```json
-{
-  "event": "document.processed",
-  "document_id": "string",
-  "status": "completed",
-  "timestamp": "2024-03-20T12:00:00Z"
-}
+```python
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Implementation details
 ```
 
-## SDK Support
-
-- Python
-- JavaScript/TypeScript
-- Go
-- Java
+- Free tier: 100 requests/hour
+- Pro tier: 1000 requests/hour
+- Enterprise: Custom limits
 
 ## Best Practices
 
-1. Always set appropriate timeouts
-2. Implement exponential backoff for retries
-3. Handle rate limits gracefully
-4. Cache responses when appropriate
-5. Use compression for large payloads
+1. Use FastAPI dependency injection for:
+
+   - Authentication
+   - Database sessions
+   - Rate limiting
+   - Logging
+
+2. Implement proper response models using Pydantic
+
+3. Use FastAPI background tasks for:
+
+   - Document processing
+   - Vector embedding
+   - Graph updates
+
+4. Enable CORS middleware for frontend integration:
+
+   ```python
+   app.add_middleware(
+       CORSMiddleware,
+       allow_origins=["*"],
+       allow_credentials=True,
+       allow_methods=["*"],
+       allow_headers=["*"],
+   )
+   ```
+
+5. Use proper status codes and response models

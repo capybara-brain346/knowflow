@@ -1,4 +1,4 @@
-iBased on your document, the system you're building is a **Hybrid RAG + Knowledge Graph** architecture for semantic and structured retrieval. Assuming 50 active users with potential spikes, here's a **modular, scalable deployment architecture** tailored for reliability, efficiency, and observability:
+Based on your document, the system you're building is a **Hybrid RAG + Knowledge Graph** architecture for semantic and structured retrieval. Assuming 50 active users with potential spikes, here's a **modular, scalable deployment architecture** tailored for reliability, efficiency, and observability:
 
 ---
 
@@ -6,34 +6,58 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
 
 ### 🔹 Core Components
 
-1. **Frontend**
+1. **Authentication & User Management**
+
+   - User authentication system
+   - Role-based access control (User/Admin)
+   - Token-based session management
+   - Admin dashboard for user management
+
+2. **Frontend**
 
    - React/Next.js (for search & results interface)
+   - Admin portal for document management
+   - User authentication flows
 
-2. **API Gateway + Backend**
+3. **API Gateway + Backend**
 
-   - FastAPI / LangChain server for:
-
+   - FastAPI server implementation:
+     - Async request handling
+     - Pydantic data validation
+     - OpenAPI/Swagger documentation
+     - Dependency injection system
+   - Core features:
+     - Authentication & authorization
      - Query parsing
      - LLM orchestration
      - Retrieval logic (hybrid vector + graph)
+   - FastAPI extensions:
+     - FastAPI-SQLAlchemy for ORM
+     - FastAPI-Users for auth
+     - FastAPI-Cache for caching
+     - FastAPI-Limiter for rate limiting
 
-3. **LLM Inference Layer**
+4. **AI Subsystem (Hybrid RAG + KG)**
 
-   - Groq API
+   a. **Indexing Phase**
 
-4. **Knowledge Graph**
+   - Document ingestion via LangChain DocumentLoader
+   - Graph construction using LLMGraphTransformer
+   - Embedding generation with OpenAI/E5
+   - Storage in Qdrant (vectors) and Neo4j (graph)
 
-   - Neo4j 
+   b. **Query-Time Phase**
 
-5. **Vector DB**
+   - Query understanding with NER/LLM parsing
+   - Hybrid retrieval combining:
+     - Vector search for semantic similarity
+     - Graph traversal for structured data
+   - Answer generation with LLM
 
-   - Qdrant
-
-6. **Metadata Store**
-
-   - PostgreSQL
-
+5. **Storage Layer**
+   - Neo4j for Knowledge Graph
+   - Qdrant for Vector DB
+   - PostgreSQL for user data & metadata
 
 ---
 
@@ -55,7 +79,7 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
               │           │
      ┌────────▼───┐ ┌─────▼─────────┐
      │  Vector DB │ │ Knowledge Graph│
-     │  (Qdrant)  │ │   (Neo4j)      │
+     │  (Qdrant)  │ │   (Neo4j)     │
      └────────────┘ └─────▲─────────┘
                           │
                     ┌────▼───────┐
@@ -68,15 +92,36 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
 
 ## 🛠️ Tech Stack Choices
 
-| Component  | Service                  | Reason                                |
-| ---------- | ------------------------ | ------------------------------------- |
-| Frontend   | Vercel / Netlify         | Simple deploy, autoscale for 50 users |
-| Backend    | FastAPI on Railway / EC2 | Lightweight, LangChain-compatible     |
-| Vector DB  | Qdrant (Docker)          | REST API, scale with disk             |
-| KG Store   | Neo4j AuraDB / Docker    | Schema-rich graph support, Cypher     |
-| LLM        | OpenAI API / vLLM (GPU)  | Fast generation, fallback via local   |
-| Storage    | S3 / PostgreSQL          | Metadata, user uploads, logs          |
-| Monitoring | Grafana Cloud or Datadog | Metrics, alerts, logging              |
+| Component  | Service                  | Reason                                 |
+| ---------- | ------------------------ | -------------------------------------- |
+| Auth       | FastAPI-Users + JWT      | Built-in auth with FastAPI integration |
+| Frontend   | Vercel / Netlify         | Simple deploy, autoscale for 50 users  |
+| Backend    | FastAPI on Railway / EC2 | Async, type-safe, auto-documentation   |
+| Vector DB  | Qdrant (Docker)          | REST API, scale with disk              |
+| KG Store   | Neo4j AuraDB / Docker    | Schema-rich graph support, Cypher      |
+| LLM        | Groq API                 | Fast generation, fallback via local    |
+| Storage    | S3 / PostgreSQL          | Metadata, user uploads, logs           |
+| Monitoring | Grafana Cloud or Datadog | Metrics, alerts, logging               |
+
+---
+
+## 👥 User Roles & Permissions
+
+### Normal User
+
+- Can search and query documents
+- View search results and explanations
+- Manage own profile and preferences
+- Access basic analytics
+
+### Admin User
+
+- All normal user permissions
+- Upload and manage documents
+- Access admin dashboard
+- Manage user accounts
+- View system analytics
+- Configure system settings
 
 ---
 
@@ -99,17 +144,21 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
   - Enough for thousands of embeddings for now
 
 - **LLM**:
-
-  - OpenAI (for now)
+  - Groq API (for now)
   - Optionally run **vLLM + GGUF models** on a GPU server if needed
 
 ---
 
 ## 🔁 CI/CD and Observability
 
-- **CI/CD**: GitHub Actions → Railway/Vercel + Docker build + test
+- **FastAPI Metrics**:
+  - Request latency
+  - Endpoint usage
+  - Error rates
+  - Custom business metrics
 - **Logging**: Stream FastAPI logs + Neo4j queries → Loki
 - **Monitoring**: Expose FastAPI Prometheus metrics
+- **Health Checks**: FastAPI built-in health check endpoints
 
 ---
 
@@ -130,5 +179,46 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
 | `prod`    | 50-user traffic  | Load-balanced FastAPI + hosted graph/vec |
 
 ---
+
+## 🔒 Security Considerations
+
+1. **Authentication**
+
+   - JWT-based token system
+   - Secure password hashing
+   - Rate limiting on auth endpoints
+   - Token refresh mechanism
+
+2. **Authorization**
+
+   - Role-based access control
+   - Resource-level permissions
+   - Admin action audit logs
+
+3. **Data Security**
+   - Encrypted data at rest
+   - Secure API communications
+   - Regular security audits
+
+---
+
+## 📊 Analytics & Monitoring
+
+1. **User Analytics**
+
+   - Search patterns
+   - Query success rates
+   - User engagement metrics
+
+2. **System Analytics**
+
+   - API performance
+   - Database metrics
+   - LLM usage and costs
+
+3. **Admin Dashboard**
+   - User management
+   - Document statistics
+   - System health monitoring
 
 Would you like a **Docker Compose setup** or **Terraform + cloud deployment guide** for this stack?
