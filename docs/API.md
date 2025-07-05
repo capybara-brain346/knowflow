@@ -2,49 +2,22 @@
 
 ## Overview
 
-KnowFlow provides a RESTful API built with FastAPI for hybrid search combining vector similarity and knowledge graph traversal.
+KnowFlow provides a RESTful API built with FastAPI for hybrid search combining vector similarity and knowledge graph traversal, using PostgreSQL with pgvector for vector storage and SQLAlchemy for ORM.
 
-## API Documentation
+## Database Integration
 
-Interactive API documentation is available at:
+The API uses SQLAlchemy with PostgreSQL and pgvector for:
 
-- Swagger UI: `http://api.knowflow.com/docs`
-- ReDoc: `http://api.knowflow.com/redoc`
+- User management and authentication
+- Document storage and metadata
+- Vector embeddings and similarity search
+- Full-text search capabilities
 
 ## Base URL
 
 ```
 Production: https://api.knowflow.com/v1
 Staging: https://api-staging.knowflow.com/v1
-```
-
-## FastAPI Implementation Details
-
-### Dependencies
-
-```python
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
-```
-
-### Models
-
-```python
-class UserBase(BaseModel):
-    email: EmailStr
-    name: str
-
-class UserCreate(UserBase):
-    password: str
-
-class User(UserBase):
-    id: str
-    role: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
 ```
 
 ## Authentication
@@ -55,21 +28,13 @@ All API requests require a Bearer token in the Authorization header:
 Authorization: Bearer <your_api_key>
 ```
 
-FastAPI OAuth2 implementation with JWT tokens.
+## API Endpoints
 
-## User Authentication & Management
+### User Management
 
-### Register User
+#### Register User
 
 `POST /auth/register`
-
-FastAPI Route:
-
-```python
-@app.post("/auth/register", response_model=User)
-async def register_user(user: UserCreate):
-    # Implementation details
-```
 
 **Request Body:**
 
@@ -93,146 +58,38 @@ async def register_user(user: UserCreate):
 }
 ```
 
-### Login
+### Document Management
 
-`POST /auth/login`
+#### Upload Document
 
-FastAPI Route:
+`POST /documents/upload`
 
-```python
-@app.post("/auth/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    # Implementation details
+**Request Body (multipart/form-data):**
+
 ```
-
-**Request Body:**
-
-```json
-{
-  "email": "string",
-  "password": "string"
-}
+file: binary
+title: string
+description: string (optional)
 ```
 
 **Response:**
 
 ```json
 {
-  "access_token": "string",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "string",
-  "user": {
-    "id": "string",
-    "email": "string",
-    "name": "string",
-    "role": "user|admin"
-  }
+  "document_id": "string",
+  "title": "string",
+  "description": "string",
+  "file_path": "string",
+  "embeddings_status": "processing|completed|failed",
+  "created_at": "2024-03-20T12:00:00Z"
 }
 ```
 
-### Refresh Token
+### Vector Search
 
-`POST /auth/refresh`
+#### Semantic Search
 
-FastAPI Route:
-
-```python
-@app.post("/auth/refresh")
-async def refresh_token(refresh_token: str = Body(...)):
-    # Implementation details
-```
-
-**Request Body:**
-
-```json
-{
-  "refresh_token": "string"
-}
-```
-
-**Response:**
-
-```json
-{
-  "access_token": "string",
-  "token_type": "Bearer",
-  "expires_in": 3600
-}
-```
-
-### Admin Routes
-
-#### Create Admin User
-
-`POST /auth/admin/create`
-
-FastAPI Route:
-
-```python
-@app.post("/auth/admin/create", dependencies=[Depends(admin_required)])
-async def create_admin(user: UserCreate):
-    # Implementation details
-```
-
-Requires existing admin authentication.
-
-**Request Body:**
-
-```json
-{
-  "email": "string",
-  "password": "string",
-  "name": "string"
-}
-```
-
-#### List Users
-
-`GET /auth/admin/users`
-
-FastAPI Route:
-
-```python
-@app.get("/auth/admin/users", dependencies=[Depends(admin_required)])
-async def list_users(skip: int = 0, limit: int = 100):
-    # Implementation details
-```
-
-Requires admin authentication.
-
-**Response:**
-
-```json
-{
-  "users": [
-    {
-      "id": "string",
-      "email": "string",
-      "name": "string",
-      "role": "user|admin",
-      "created_at": "2024-03-20T12:00:00Z",
-      "last_login": "2024-03-20T12:00:00Z"
-    }
-  ],
-  "total": 100,
-  "page": 1
-}
-```
-
-## Search Endpoints
-
-### Hybrid Search
-
-`POST /search/hybrid`
-
-FastAPI Route:
-
-```python
-@app.post("/search/hybrid", dependencies=[Depends(get_current_user)])
-async def hybrid_search(query: SearchQuery):
-    # Implementation details
-```
+`POST /search/semantic`
 
 **Request Body:**
 
@@ -250,59 +107,105 @@ async def hybrid_search(query: SearchQuery):
 }
 ```
 
-## Document Management
-
-### Upload Document
-
-`POST /documents/upload`
-
-FastAPI Route:
-
-```python
-@app.post("/documents/upload", dependencies=[Depends(admin_required)])
-async def upload_document(
-    file: UploadFile,
-    metadata: DocumentMetadata = Depends()
-):
-    # Implementation details
-```
-
-**Request Body:**
-Multipart form data with:
-
-- File
-- Metadata JSON
-
 **Response:**
 
 ```json
 {
-  "document_id": "string",
-  "status": "processing|completed|failed",
-  "vector_id": "string",
-  "graph_nodes": ["string"]
+  "results": [
+    {
+      "document_id": "string",
+      "title": "string",
+      "content": "string",
+      "metadata": {
+        "file_type": "string",
+        "uploaded_by": "string",
+        "created_at": "2024-03-20T12:00:00Z"
+      },
+      "similarity_score": 0.95
+    }
+  ],
+  "total": 1,
+  "processing_time_ms": 150
 }
+```
+
+## Implementation Details
+
+### Database Models
+
+The API uses SQLAlchemy models for database interactions:
+
+```python
+from sqlalchemy.orm import Session
+from .models import User, Document
+from .vector_store import vector_store
+
+async def create_user(db: Session, user_data: dict):
+    user = User(**user_data)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+async def search_documents(db: Session, query: str, filters: dict):
+    # Vector search using LangChain PGVector
+    vector_results = await vector_store.asimilarity_search(
+        query=query,
+        k=10,
+        filter=filters
+    )
+
+    # Combine with metadata from documents table
+    document_ids = [doc.metadata['document_id'] for doc in vector_results]
+    documents = db.query(Document).filter(Document.id.in_(document_ids)).all()
+
+    return documents
+```
+
+### Vector Store Integration
+
+The API uses LangChain's PGVector for vector operations:
+
+```python
+from langchain_community.vectorstores import PGVector
+from langchain_community.embeddings import OpenAIEmbeddings
+
+# Initialize vector store
+vector_store = PGVector(
+    connection_string=POSTGRES_CONNECTION_STRING,
+    embedding_function=OpenAIEmbeddings(),
+    collection_name="document_embeddings"
+)
+
+# Add documents to vector store
+async def index_document(document: Document, content: str):
+    try:
+        await vector_store.aadd_texts(
+            texts=[content],
+            metadatas=[{
+                "document_id": document.id,
+                "title": document.title,
+                "file_type": document.file_type
+            }]
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Error indexing document: {e}")
+        return False
 ```
 
 ## Error Handling
 
-FastAPI automatic error responses:
+Standard HTTP status codes are used:
 
-```python
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "code": exc.status_code,
-                "message": exc.detail
-            }
-        }
-    )
-```
+- 200: Success
+- 400: Bad Request
+- 401: Unauthorized
+- 403: Forbidden
+- 404: Not Found
+- 500: Internal Server Error
 
-All errors follow this format:
+Error responses include:
 
 ```json
 {
@@ -316,45 +219,16 @@ All errors follow this format:
 
 ## Rate Limiting
 
-Using FastAPI middleware:
-
-```python
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    # Implementation details
-```
-
 - Free tier: 100 requests/hour
 - Pro tier: 1000 requests/hour
 - Enterprise: Custom limits
 
 ## Best Practices
 
-1. Use FastAPI dependency injection for:
-
-   - Authentication
-   - Database sessions
-   - Rate limiting
-   - Logging
-
-2. Implement proper response models using Pydantic
-
-3. Use FastAPI background tasks for:
-
-   - Document processing
-   - Vector embedding
-   - Graph updates
-
-4. Enable CORS middleware for frontend integration:
-
-   ```python
-   app.add_middleware(
-       CORSMiddleware,
-       allow_origins=["*"],
-       allow_credentials=True,
-       allow_methods=["*"],
-       allow_headers=["*"],
-   )
-   ```
-
-5. Use proper status codes and response models
+1. Use connection pooling for database connections
+2. Implement retry logic for vector operations
+3. Cache frequently accessed embeddings
+4. Use batch operations for multiple documents
+5. Implement proper error handling and logging
+6. Use appropriate indexes for better performance
+7. Monitor query performance and optimize as needed

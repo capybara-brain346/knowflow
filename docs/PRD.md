@@ -44,20 +44,117 @@ Based on your document, the system you're building is a **Hybrid RAG + Knowledge
    - Document ingestion via LangChain DocumentLoader
    - Graph construction using LLMGraphTransformer
    - Embedding generation with OpenAI/E5
-   - Storage in Qdrant (vectors) and Neo4j (graph)
+   - Storage in PostgreSQL (pgvector for vectors) and Neo4j (graph)
 
    b. **Query-Time Phase**
 
    - Query understanding with NER/LLM parsing
    - Hybrid retrieval combining:
-     - Vector search for semantic similarity
+     - Vector search using pgvector HNSW indexes
      - Graph traversal for structured data
    - Answer generation with LLM
 
 5. **Storage Layer**
-   - Neo4j for Knowledge Graph
-   - Qdrant for Vector DB
-   - PostgreSQL for user data & metadata
+   - PostgreSQL with pgvector extension for:
+     - Vector embeddings (HNSW indexed)
+     - User data & metadata
+     - Document storage
+     - SQLAlchemy ORM for database interactions
+   - S3 for large file storage
+
+### 🗄️ Database Schema
+
+````sql
+-- Vector Store (managed by LangChain PGVector)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Users table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255),
+    role VARCHAR(50) DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Documents table (metadata and file info)
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    file_path VARCHAR(512),
+    file_type VARCHAR(50),
+    uploaded_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SQLAlchemy Models
+```python
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    name = Column(String(255))
+    role = Column(String(50), default='user')
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    documents = relationship("Document", back_populates="uploader")
+
+class Document(Base):
+    __tablename__ = 'documents'
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    file_path = Column(String(512))
+    file_type = Column(String(50))
+    uploaded_by = Column(Integer, ForeignKey('users.id'))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    uploader = relationship("User", back_populates="documents")
+````
+
+### 🔍 Vector Search Configuration
+
+```python
+from langchain_community.vectorstores import PGVector
+from langchain_community.embeddings import OpenAIEmbeddings
+
+# Connection string
+POSTGRES_CONNECTION_STRING = "postgresql+psycopg2://user:pass@localhost:5432/knowflow"
+
+# Initialize vector store
+vector_store = PGVector(
+    connection_string=POSTGRES_CONNECTION_STRING,
+    embedding_function=OpenAIEmbeddings(),
+    collection_name="document_embeddings",
+    distance_strategy="cosine"  # or "euclidean" or "max_inner_product"
+)
+```
+
+### 📊 Database Indexes
+
+```sql
+-- Users email index
+CREATE INDEX idx_users_email ON users(email);
+
+-- Documents search index
+CREATE INDEX idx_documents_title ON documents USING GIN (to_tsvector('english', title));
+CREATE INDEX idx_documents_description ON documents USING GIN (to_tsvector('english', description));
+
+-- Vector similarity index (created by LangChain PGVector)
+CREATE INDEX ON langchain_pg_embedding USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+```
 
 ---
 
@@ -78,8 +175,8 @@ Based on your document, the system you're building is a **Hybrid RAG + Knowledge
          └────┬───────────┬─────────┘
               │           │
      ┌────────▼───┐ ┌─────▼─────────┐
-     │  Vector DB │ │ Knowledge Graph│
-     │  (Qdrant)  │ │   (Neo4j)     │
+     │ PostgreSQL │ │ Knowledge Graph│
+     │ (pgvector) │ │   (Neo4j)     │
      └────────────┘ └─────▲─────────┘
                           │
                     ┌────▼───────┐
@@ -92,16 +189,16 @@ Based on your document, the system you're building is a **Hybrid RAG + Knowledge
 
 ## 🛠️ Tech Stack Choices
 
-| Component  | Service                  | Reason                                 |
-| ---------- | ------------------------ | -------------------------------------- |
-| Auth       | FastAPI-Users + JWT      | Built-in auth with FastAPI integration |
-| Frontend   | Vercel / Netlify         | Simple deploy, autoscale for 50 users  |
-| Backend    | FastAPI on Railway / EC2 | Async, type-safe, auto-documentation   |
-| Vector DB  | Qdrant (Docker)          | REST API, scale with disk              |
-| KG Store   | Neo4j AuraDB / Docker    | Schema-rich graph support, Cypher      |
-| LLM        | Groq API                 | Fast generation, fallback via local    |
-| Storage    | S3 / PostgreSQL          | Metadata, user uploads, logs           |
-| Monitoring | Grafana Cloud or Datadog | Metrics, alerts, logging               |
+| Component    | Service                  | Reason                                 |
+| ------------ | ------------------------ | -------------------------------------- |
+| Auth         | FastAPI-Users + JWT      | Built-in auth with FastAPI integration |
+| Frontend     | Vercel / Netlify         | Simple deploy, autoscale for 50 users  |
+| Backend      | FastAPI on Railway / EC2 | Async, type-safe, auto-documentation   |
+| Vector Store | PostgreSQL + pgvector    | Unified storage, HNSW indexes          |
+| KG Store     | Neo4j AuraDB / Docker    | Schema-rich graph support, Cypher      |
+| LLM          | Groq API                 | Fast generation, fallback via local    |
+| Storage      | S3 / PostgreSQL          | Metadata, user uploads, logs           |
+| Monitoring   | Grafana Cloud or Datadog | Metrics, alerts, logging               |
 
 ---
 
@@ -128,20 +225,15 @@ Based on your document, the system you're building is a **Hybrid RAG + Knowledge
 ## ⚖️ Scaling Notes (for 50 users)
 
 - **Load Profile**: Assuming 10-20 concurrent queries/min
-- **API Server**:
-
-  - 1–2 containers (2 vCPU, 4 GB RAM each)
-  - Horizontal scale behind a load balancer (e.g. AWS ALB)
-
+- **PostgreSQL + pgvector**:
+  - Start with 4 vCPU, 16GB RAM instance
+  - HNSW index parameters: m=16, ef_construction=64
+  - Estimated storage: ~5GB for 1M vectors (1536d)
+  - Regular backups and monitoring
 - **Neo4j**:
 
   - Use AuraDB Free/Professional tier or self-host with Docker
   - With <100k nodes/edges, runs on 2 vCPU / 8 GB RAM
-
-- **Qdrant**:
-
-  - Docker container with disk-mounted storage
-  - Enough for thousands of embeddings for now
 
 - **LLM**:
   - Groq API (for now)
