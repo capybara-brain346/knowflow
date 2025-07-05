@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_PERIOD: int = Field(default=60, env="RATE_LIMIT_PERIOD")
     RATE_LIMIT_EXCLUDED_PATHS: set[str] = Field(
         default={"/health", "/health/detailed"}, env="RATE_LIMIT_EXCLUDED_PATHS"
+    )
+
+    CORS_ORIGINS: List[str] = Field(
+        default=["*"],
+        env="CORS_ORIGINS",
+        description="List of allowed CORS origins. Use ['*'] to allow all origins.",
     )
 
     class Config:

@@ -11,7 +11,7 @@ from starlette.types import Message
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.core.exceptions import AppException
+from src.core.exceptions import AppException, RateLimitException
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -59,11 +59,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         start_time = time.time()
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
         logger.info(
             "Request started",
             extra={
-                "request_id": request.state.request_id,
+                "request_id": request_id,
                 "method": request.method,
                 "url": str(request.url),
                 "client_ip": request.client.host,
@@ -74,11 +75,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         process_time = time.time() - start_time
 
-        # Log response
         logger.info(
             "Request completed",
             extra={
-                "request_id": request.state.request_id,
+                "request_id": request_id,
                 "method": request.method,
                 "url": str(request.url),
                 "status_code": response.status_code,
@@ -112,8 +112,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host
 
         if not self._is_allowed(client_ip):
-            return JSONResponse(
-                status_code=429, content={"detail": "Too many requests"}
+            raise RateLimitException(
+                message="Too many requests",
+                extra={
+                    "client_ip": client_ip,
+                    "limit": self.calls,
+                    "period": f"{self.period} seconds",
+                },
             )
 
         return await call_next(request)
@@ -154,6 +159,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 def setup_middleware(app: FastAPI) -> None:
+    app.add_middleware(RequestContextMiddleware)
+
+    app.add_middleware(LoggingMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -161,9 +170,6 @@ def setup_middleware(app: FastAPI) -> None:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    app.add_middleware(RequestContextMiddleware)
-    app.add_middleware(LoggingMiddleware)
 
     if settings.ENV == "production":
         app.add_middleware(

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import settings
 from src.core.logging import logger
 from src.routes import auth_routes, search_routes
-from core.middleware import setup_middleware
+from src.core.middleware import setup_middleware
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
