@@ -11,7 +11,6 @@ app = FastAPI(
     version=settings.VERSION,
 )
 
-# Setup middleware
 setup_middleware(app)
 
 
