@@ -1,0 +1,7 @@
+[project]
+name = "knowflow"
+version = "0.1.0"
+description = "A Knowledge-Driven RAG System for Enterprise Q&A"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
