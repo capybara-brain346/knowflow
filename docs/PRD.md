@@ -20,23 +20,20 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
 
 3. **LLM Inference Layer**
 
-   - OpenAI API (or local model like Ollama/vLLM on GPU server)
+   - Groq API
 
 4. **Knowledge Graph**
 
-   - Neo4j (or TigerGraph if scaling to > millions of nodes)
+   - Neo4j 
 
 5. **Vector DB**
 
-   - Qdrant / FAISS / Chroma (Qdrant preferred for production)
+   - Qdrant
 
 6. **Metadata Store**
 
-   - PostgreSQL or MongoDB for user sessions, logs
+   - PostgreSQL
 
-7. **Monitoring + Logging**
-
-   - Prometheus + Grafana, Loki (or use managed like Datadog)
 
 ---
 
@@ -47,7 +44,7 @@ iBased on your document, the system you're building is a **Hybrid RAG + Knowledg
 ```plaintext
                  ┌──────────────┐
      Browser --> │  Frontend    │
-                 │  (Next.js)   │
+                 │  (React Vite)│
                  └─────┬────────┘
                        │ REST/gRPC
                        ▼
