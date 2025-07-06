@@ -50,11 +50,18 @@ class AdminService:
                 google_api_key=settings.GOOGLE_API_KEY,
             )
 
+            logger.info("Initializing vector store...")
             self.vector_store = PGVector(
                 connection=settings.DATABASE_URL,
                 embeddings=self.embeddings,
                 collection_name=settings.VECTOR_COLLECTION_NAME,
+                pre_delete_collection=False,
+                distance_strategy="cosine",
             )
+
+            self.vector_store.create_vector_extension()
+            self.vector_store.create_tables_if_not_exists()
+            logger.info("Vector store initialized successfully")
 
             self.graph_service = GraphService()
 
@@ -173,7 +180,6 @@ class AdminService:
                     chunks = text_splitter.split_documents(documents)
                     logger.info(f"Created {len(chunks)} chunks for document: {doc_id}")
 
-                    # Store in vector store
                     for i, chunk in enumerate(chunks):
                         chunk.metadata.update(
                             {
@@ -185,12 +191,22 @@ class AdminService:
                         )
 
                     logger.debug(f"Adding document chunks to vector store: {doc_id}")
-                    self.vector_store.add_documents(chunks)
-                    logger.info(
-                        f"Successfully indexed document in vector store: {doc_id}"
-                    )
+                    try:
+                        self.vector_store.add_documents(chunks)
+                        logger.info(
+                            f"Successfully indexed document in vector store: {doc_id}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to add documents directly, trying alternative method: {str(e)}"
+                        )
+                        texts = [chunk.page_content for chunk in chunks]
+                        metadatas = [chunk.metadata for chunk in chunks]
+                        self.vector_store.add_texts(texts=texts, metadatas=metadatas)
+                        logger.info(
+                            f"Successfully indexed document using alternative method: {doc_id}"
+                        )
 
-                    # Extract and store graph knowledge
                     logger.debug(f"Extracting graph knowledge: {doc_id}")
                     full_text = "\n\n".join([chunk.page_content for chunk in chunks])
                     self.graph_service.store_graph_knowledge(doc_id, full_text)
