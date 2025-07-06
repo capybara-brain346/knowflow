@@ -1,234 +1,266 @@
 # KnowFlow API Documentation
 
-## Overview
-
-KnowFlow provides a RESTful API built with FastAPI for hybrid search combining vector similarity and knowledge graph traversal, using PostgreSQL with pgvector for vector storage and SQLAlchemy for ORM.
-
-## Database Integration
-
-The API uses SQLAlchemy with PostgreSQL and pgvector for:
-
-- User management and authentication
-- Document storage and metadata
-- Vector embeddings and similarity search
-- Full-text search capabilities
-
-## Base URL
-
-```
-Production: https://api.knowflow.com/v1
-Staging: https://api-staging.knowflow.com/v1
-```
+This document outlines the REST API endpoints available in KnowFlow.
 
 ## Authentication
 
-All API requests require a Bearer token in the Authorization header:
+The API uses OAuth2 with Bearer token authentication. Most endpoints require authentication through a Bearer token that can be obtained via the `/auth/token` or `/auth/login` endpoints.
 
-```
-Authorization: Bearer <your_api_key>
-```
+### Base URL
 
-## API Endpoints
+All API endpoints are prefixed with `/api/v1`
 
-### User Management
+## Endpoints
 
-#### Register User
+### Authentication Routes
 
-`POST /auth/register`
+#### Login for Access Token
 
-**Request Body:**
+- **POST** `/auth/token`
+- **Description**: OAuth2 compatible token login
+- **Request Body** (form-data):
+  - `username`: string
+  - `password`: string
+- **Response**:
+  ```json
+  {
+    "access_token": "string",
+    "token_type": "bearer",
+    "user": {
+      "username": "string",
+      "email": "string",
+      "role": "string"
+    }
+  }
+  ```
 
-```json
-{
-  "email": "string",
-  "password": "string",
-  "name": "string"
-}
-```
+#### User Login
 
-**Response:**
+- **POST** `/auth/login`
+- **Description**: Alternative JSON-based login endpoint
+- **Request Body**:
+  ```json
+  {
+    "username": "string",
+    "password": "string"
+  }
+  ```
+- **Response**: Same as `/auth/token`
 
-```json
-{
-  "user_id": "string",
-  "email": "string",
-  "name": "string",
-  "role": "user",
-  "created_at": "2024-03-20T12:00:00Z"
-}
-```
+#### Register New User
 
-### Document Management
+- **POST** `/auth/register`
+- **Description**: Register a new regular user
+- **Request Body**:
+  ```json
+  {
+    "username": "string",
+    "email": "string",
+    "password": "string"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "message": "User registered successfully",
+    "username": "string",
+    "role": "string"
+  }
+  ```
+
+#### Register Admin User
+
+- **POST** `/auth/register/admin`
+- **Description**: Register a new admin user (requires admin privileges)
+- **Auth**: Required (Admin only)
+- **Request Body**: Same as regular registration
+- **Response**: Same as regular registration
+
+#### Logout
+
+- **POST** `/auth/logout`
+- **Auth**: Required
+- **Response**:
+  ```json
+  {
+    "message": "Successfully logged out"
+  }
+  ```
+
+#### Get Current User
+
+- **GET** `/auth/me`
+- **Auth**: Required
+- **Response**:
+  ```json
+  {
+    "username": "string",
+    "email": "string",
+    "role": "string"
+  }
+  ```
+
+### Admin Routes
 
 #### Upload Document
 
-`POST /documents/upload`
-
-**Request Body (multipart/form-data):**
-
-```
-file: binary
-title: string
-description: string (optional)
-```
-
-**Response:**
-
-```json
-{
-  "document_id": "string",
-  "title": "string",
-  "description": "string",
-  "file_path": "string",
-  "embeddings_status": "processing|completed|failed",
-  "created_at": "2024-03-20T12:00:00Z"
-}
-```
-
-### Vector Search
-
-#### Semantic Search
-
-`POST /search/semantic`
-
-**Request Body:**
-
-```json
-{
-  "query": "string",
-  "filters": {
-    "document_type": ["article", "paper"],
-    "date_range": {
-      "start": "2024-01-01",
-      "end": "2024-03-20"
-    }
-  },
-  "limit": 10
-}
-```
-
-**Response:**
-
-```json
-{
-  "results": [
-    {
-      "document_id": "string",
-      "title": "string",
-      "content": "string",
-      "metadata": {
-        "file_type": "string",
-        "uploaded_by": "string",
-        "created_at": "2024-03-20T12:00:00Z"
-      },
-      "similarity_score": 0.95
-    }
-  ],
-  "total": 1,
-  "processing_time_ms": 150
-}
-```
-
-## Implementation Details
-
-### Database Models
-
-The API uses SQLAlchemy models for database interactions:
-
-```python
-from sqlalchemy.orm import Session
-from .models import User, Document
-from .vector_store import vector_store
-
-async def create_user(db: Session, user_data: dict):
-    user = User(**user_data)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-async def search_documents(db: Session, query: str, filters: dict):
-    # Vector search using LangChain PGVector
-    vector_results = await vector_store.asimilarity_search(
-        query=query,
-        k=10,
-        filter=filters
-    )
-
-    # Combine with metadata from documents table
-    document_ids = [doc.metadata['document_id'] for doc in vector_results]
-    documents = db.query(Document).filter(Document.id.in_(document_ids)).all()
-
-    return documents
-```
-
-### Vector Store Integration
-
-The API uses LangChain's PGVector for vector operations:
-
-```python
-from langchain_community.vectorstores import PGVector
-from langchain_community.embeddings import OpenAIEmbeddings
-
-# Initialize vector store
-vector_store = PGVector(
-    connection_string=POSTGRES_CONNECTION_STRING,
-    embedding_function=OpenAIEmbeddings(),
-    collection_name="document_embeddings"
-)
-
-# Add documents to vector store
-async def index_document(document: Document, content: str):
-    try:
-        await vector_store.aadd_texts(
-            texts=[content],
-            metadatas=[{
-                "document_id": document.id,
-                "title": document.title,
-                "file_type": document.file_type
-            }]
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Error indexing document: {e}")
-        return False
-```
-
-## Error Handling
-
-Standard HTTP status codes are used:
-
-- 200: Success
-- 400: Bad Request
-- 401: Unauthorized
-- 403: Forbidden
-- 404: Not Found
-- 500: Internal Server Error
-
-Error responses include:
-
-```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "details": {}
+- **POST** `/admin/documents/upload`
+- **Auth**: Required (Admin only)
+- **Request Body**: Multipart form data
+  - `file`: File
+  - `metadata`: JSON object
+- **Response**:
+  ```json
+  {
+    "doc_id": "string",
+    "status": "processing",
+    "message": "string"
   }
+  ```
+
+#### Index Document
+
+- **POST** `/admin/documents/{doc_id}/index`
+- **Auth**: Required (Admin only)
+- **Request Body**:
+  ```json
+  {
+    "force_reindex": boolean
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "status": "string",
+    "message": "string"
+  }
+  ```
+
+#### List Documents
+
+- **GET** `/admin/documents`
+- **Auth**: Required (Admin only)
+- **Query Parameters**:
+  - `status`: string (optional)
+  - `page`: integer (default: 1)
+  - `page_size`: integer (default: 10, max: 100)
+- **Response**: Array of document objects
+
+#### Get Document
+
+- **GET** `/admin/documents/{doc_id}`
+- **Auth**: Required (Admin only)
+- **Response**: Document object
+
+### Chat Routes
+
+#### Send Chat Message
+
+- **POST** `/chat`
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "query": "string",
+    "session_id": "string",
+    "context": {}
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "message": "string",
+    "context_used": {},
+    "session_id": "string"
+  }
+  ```
+
+### Graph Routes
+
+#### Query Graph
+
+- **POST** `/graph/query`
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "query": "string",
+    "params": {}
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "nodes": [],
+    "relations": [],
+    "metadata": {}
+  }
+  ```
+
+### Chat Session Routes
+
+#### Create Session
+
+- **POST** `/sessions`
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "title": "string"
+  }
+  ```
+- **Response**: Chat session object
+
+#### List Sessions
+
+- **GET** `/sessions`
+- **Auth**: Required
+- **Response**: Array of chat session objects
+
+#### Get Session
+
+- **GET** `/sessions/{session_id}`
+- **Auth**: Required
+- **Response**: Chat session object
+
+#### Send Message in Session
+
+- **POST** `/sessions/{session_id}/messages`
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "content": "string",
+    "context_used": {}
+  }
+  ```
+- **Response**: Updated chat session object
+
+#### Delete Session
+
+- **DELETE** `/sessions/{session_id}`
+- **Auth**: Required
+- **Response**: No content (204)
+
+## Error Responses
+
+All endpoints may return the following error responses:
+
+- **401 Unauthorized**: Invalid or missing authentication
+- **403 Forbidden**: Insufficient permissions
+- **404 Not Found**: Requested resource not found
+- **422 Unprocessable Entity**: Invalid request body or parameters
+- **500 Internal Server Error**: Server-side error
+
+Error responses follow this format:
+
+```json
+{
+  "detail": "Error message"
 }
 ```
 
-## Rate Limiting
+```
 
-- Free tier: 100 requests/hour
-- Pro tier: 1000 requests/hour
-- Enterprise: Custom limits
-
-## Best Practices
-
-1. Use connection pooling for database connections
-2. Implement retry logic for vector operations
-3. Cache frequently accessed embeddings
-4. Use batch operations for multiple documents
-5. Implement proper error handling and logging
-6. Use appropriate indexes for better performance
-7. Monitor query performance and optimize as needed
+This API documentation provides a comprehensive overview of all available endpoints, their authentication requirements, request/response formats, and possible error responses. The documentation is structured to be easily readable and follows common REST API documentation practices.
+```
