@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import uuid
 from typing import Callable, Optional
@@ -124,7 +124,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
     def _is_allowed(self, client_ip: str) -> bool:
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         if client_ip not in self.clients:
             self.clients[client_ip] = [(now, 1)]
             return True

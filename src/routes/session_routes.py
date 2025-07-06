@@ -1,70 +1,96 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
 from src.models.request import CreateSessionRequest, SendMessageRequest
-from src.models.response import ChatSessionResponse, ChatSessionListResponse
+from src.models.response import (
+    ChatSessionResponse,
+    ChatSessionListResponse,
+    MessageResponse,
+)
 from src.services.session_service import SessionService
-from src.routes.auth_routes import get_current_user
+from src.core.auth import get_current_user
 from src.models.database import User
 
-router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
+router = APIRouter()
 
 
-@router.post("", response_model=ChatSessionResponse)
-def create_session(
+@router.post(
+    "", response_model=ChatSessionResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_session(
     request: CreateSessionRequest,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.create_session(current_user.id, request.title)
-    return session
+    session = await service.create_session(current_user.id, request.title)
+    return ChatSessionResponse.model_validate(session)
 
 
 @router.get("", response_model=List[ChatSessionListResponse])
-def list_sessions(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+async def list_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    sessions = service.get_user_sessions(current_user.id)
-    return sessions
+    sessions = await service.get_user_sessions(current_user.id)
+    return [ChatSessionListResponse.model_validate(session) for session in sessions]
 
 
 @router.get("/{session_id}", response_model=ChatSessionResponse)
-def get_session(
+async def get_session(
     session_id: int,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.get_session(session_id, current_user.id)
+    session = await service.get_session(session_id, current_user.id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return session
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+    return ChatSessionResponse.model_validate(session)
 
 
 @router.post("/{session_id}/messages", response_model=ChatSessionResponse)
-def send_message(
+async def send_message(
     session_id: int,
     request: SendMessageRequest,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.get_session(session_id, current_user.id)
+    session = await service.get_session(session_id, current_user.id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
 
-    # Add user message
-    service.add_message(
+    message = await service.add_message(
         session_id=session_id,
         sender="user",
         content=request.content,
         context_used=request.context_used,
     )
 
-    # Here you would typically process the message and generate an AI response
-    # For now, we'll just return the updated session
-    return service.get_session(session_id, current_user.id)
+    ai_message = await service.get_ai_response(session_id, message.id)
+
+    updated_session = await service.get_session(session_id, current_user.id)
+    return ChatSessionResponse.model_validate(updated_session)
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    service = SessionService(db)
+    session = await service.get_session(session_id, current_user.id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+    await service.delete_session(session_id, current_user.id)

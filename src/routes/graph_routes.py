@@ -1,26 +1,38 @@
-from fastapi import APIRouter, status
-from typing import Dict, Any, List
-from pydantic import BaseModel
-
+from fastapi import APIRouter, status, Depends
+from typing import Dict, Any, List, Optional
 from src.services.graph_service import GraphService
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
+from src.models.request import GraphQueryRequest
+from src.models.response import (
+    GraphQueryResponse,
+    GraphNodeResponse,
+    GraphRelationResponse,
+)
+from src.core.auth import get_current_user
+from src.models.database import User
 
 router = APIRouter()
 graph_service = GraphService()
 
 
-class GraphQueryRequest(BaseModel):
-    query: str
-
-
-@router.get("/query", status_code=status.HTTP_200_OK)
-async def query_graph(query_id: str) -> Dict[str, List[Dict[str, Any]]]:
+@router.post("/query", response_model=GraphQueryResponse)
+async def query_graph(
+    request: GraphQueryRequest,
+    current_user: User = Depends(get_current_user),
+) -> GraphQueryResponse:
     try:
-        logger.info(f"Processing graph query: {query_id}")
-        results = graph_service.query_graph(query_id)
+        logger.info(f"Processing graph query: {request.query}")
+        results = await graph_service.query_graph(request.query, request.params)
         logger.info("Graph query processed successfully")
-        return {"results": results}
+
+        return GraphQueryResponse(
+            nodes=[GraphNodeResponse(**node) for node in results.get("nodes", [])],
+            relations=[
+                GraphRelationResponse(**rel) for rel in results.get("relations", [])
+            ],
+            metadata=results.get("metadata"),
+        )
     except ExternalServiceException as e:
         logger.error(f"External service error during graph query: {str(e)}")
         raise

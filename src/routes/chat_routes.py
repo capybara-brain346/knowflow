@@ -1,26 +1,33 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from typing import Dict
-from pydantic import BaseModel
-
 from src.services.chat_service import ChatService
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
+from src.models.request import ChatRequest
+from src.models.response import ChatResponse
+from src.core.auth import get_current_user
+from src.models.database import User
 
 router = APIRouter()
 chat_service = ChatService()
 
 
-class ChatRequest(BaseModel):
-    query: str
-
-
-@router.post("/chat", status_code=status.HTTP_200_OK)
-async def chat(request: ChatRequest) -> Dict[str, str]:
+@router.post("", response_model=ChatResponse)
+async def chat(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+) -> ChatResponse:
     try:
         logger.info(f"Processing chat query: {request.query[:50]}...")
-        response = await chat_service.process_query(request.query)
+        response = await chat_service.process_query(
+            query=request.query, session_id=request.session_id, context=request.context
+        )
         logger.info("Chat response generated successfully")
-        return {"response": response}
+        return ChatResponse(
+            message=response.get("message", ""),
+            context_used=response.get("context_used"),
+            session_id=response.get("session_id"),
+        )
     except ExternalServiceException as e:
         logger.error(f"External service error during chat: {str(e)}")
         raise

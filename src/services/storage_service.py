@@ -20,7 +20,6 @@ class StorageService:
     def _get_user_prefixed_key(self, user_id: int, file_key: str) -> str:
         """Generate a user-specific S3 key"""
         user_prefix = f"user_{user_id}/"
-        # Remove any leading slashes from file_key to avoid double slashes
         clean_file_key = file_key.lstrip("/")
         return f"{user_prefix}{clean_file_key}"
 
@@ -111,7 +110,6 @@ class StorageService:
             files = []
             if "Contents" in response:
                 for obj in response["Contents"]:
-                    # If listing user files, remove user prefix from key
                     key = obj["Key"]
                     if user_id is not None:
                         user_prefix = f"user_{user_id}/"
@@ -121,7 +119,7 @@ class StorageService:
                             else key
                         )
 
-                    if key:  # Skip empty keys
+                    if key:
                         files.append(
                             {
                                 "key": key,

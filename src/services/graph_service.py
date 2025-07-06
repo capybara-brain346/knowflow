@@ -74,9 +74,9 @@ class GraphService:
 
             content = response.content.strip()
             if content.startswith("```"):
-                content = content.split("\n", 1)[1]  # Remove first line if it's ```json
+                content = content.split("\n", 1)[1]
             if content.endswith("```"):
-                content = content.rsplit("\n", 1)[0]  # Remove last line if it's ```
+                content = content.rsplit("\n", 1)[0]
             content = content.strip()
 
             try:

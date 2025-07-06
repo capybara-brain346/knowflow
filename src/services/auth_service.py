@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -35,7 +35,6 @@ class AuthService:
     def create_user(
         self, username: str, email: str, password: str, role: UserRole = UserRole.USER
     ) -> User:
-        # Check if username or email already exists
         if self.get_user_by_username(username):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -47,7 +46,6 @@ class AuthService:
                 detail="Email already registered",
             )
 
-        # Create new user
         hashed_password = self.get_password_hash(password)
         user = User(
             username=username, email=email, hashed_password=hashed_password, role=role
@@ -70,9 +68,9 @@ class AuthService:
     ) -> str:
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(
+            expire = datetime.now(timezone.utc) + timedelta(
                 minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
             )
 
