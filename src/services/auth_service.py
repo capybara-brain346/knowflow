@@ -100,9 +100,7 @@ class AuthService:
         return user
 
     def create_admin_user(self, username: str, email: str, password: str) -> User:
-        """Helper method to create an admin user"""
         return self.create_user(username, email, password, role=UserRole.ADMIN)
 
     def get_user_s3_prefix(self, user_id: int) -> str:
-        """Generate a unique S3 prefix for user's files"""
         return f"user_{user_id}/"

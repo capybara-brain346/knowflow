@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, constr
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -71,3 +71,9 @@ class SearchSuggestionParams(BaseModel):
 class RecentSearchParams(BaseModel):
     limit: int = Field(10, ge=1, le=50)
     user_id: Optional[int] = None
+
+
+class FollowUpChatRequest(BaseModel):
+    message: str
+    referenced_node_ids: Optional[List[str]] = None
+    context_window: Optional[int] = 5

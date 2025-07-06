@@ -149,3 +149,10 @@ class SearchSuggestionResponse(BaseModel):
 class RecentSearchResponse(BaseModel):
     recent_searches: List[Dict[str, Any]]
     total_count: int
+
+
+class FollowUpChatResponse(BaseModel):
+    response: str
+    context_nodes: List[Dict[str, Any]]
+    memory_context: Dict[str, Any]
+    referenced_entities: List[str]

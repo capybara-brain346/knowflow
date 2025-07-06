@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text, Enum
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import relationship
 import enum
 import sqlalchemy
-
-Base = declarative_base()
+from sqlalchemy.sql import func
+from src.core.database import Base
 
 
 class UserRole(enum.Enum):
@@ -42,14 +42,12 @@ class User(Base):
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(String, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title = Column(String(255))
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
-    updated_at = Column(
-        DateTime,
-        default=datetime.now(timezone.utc),
-        onupdate=datetime.now(timezone.utc),
+    memory_context = Column(JSON, nullable=False, default=dict)
+    recent_node_ids = Column(JSON, nullable=False, default=list)
+    last_activity = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     user = relationship("User", back_populates="chat_sessions")

@@ -1,17 +1,24 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from fastapi import HTTPException
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
 from langchain_groq import ChatGroq
 from langchain.schema import HumanMessage, SystemMessage
+from sqlalchemy.orm import Session
+from src.core.database import get_neo4j_driver, get_db
+from src.models.request import FollowUpChatRequest
+from src.models.response import FollowUpChatResponse
+from src.models.database import ChatSession
+from datetime import datetime, timezone
 
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
-from src.services.graph_service import GraphService
 
 
 class ChatService:
-    def __init__(self):
+    def __init__(self, db: Session = None):
+        self.db = db or next(get_db())
         try:
             self.embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.GEMINI_EMBEDDING_MODEL,
@@ -28,7 +35,7 @@ class ChatService:
                 groq_api_key=settings.GROQ_API_KEY, model_name=settings.GROQ_MODEL_NAME
             )
 
-            self.graph_service = GraphService()
+            self.neo4j_driver = get_neo4j_driver()
 
             logger.info("ChatService initialized successfully")
         except Exception as e:
@@ -119,3 +126,67 @@ class ChatService:
                 service_name="ChatService",
                 extra={"error": str(e)},
             )
+
+    async def follow_up_chat(
+        self, session_id: str, request: FollowUpChatRequest
+    ) -> FollowUpChatResponse:
+        session = self._get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        context_nodes = await self._get_context_nodes(
+            request.referenced_node_ids or session.recent_node_ids,
+            request.context_window,
+        )
+
+        self._update_session(session, context_nodes)
+
+        response = await self._generate_response_with_context(
+            request.message, context_nodes, session.memory_context
+        )
+
+        return FollowUpChatResponse(
+            response=response["text"],
+            context_nodes=context_nodes,
+            memory_context=session.memory_context,
+            referenced_entities=response["referenced_entities"],
+        )
+
+    def _get_session(self, session_id: str) -> ChatSession:
+        return self.db.query(ChatSession).filter(ChatSession.id == session_id).first()
+
+    async def _get_context_nodes(
+        self, node_ids: List[str], context_window: int
+    ) -> List[Dict[str, Any]]:
+        with self.neo4j_driver.session() as session:
+            query = """
+            MATCH path = (start)-[*..{context_window}]-(related)
+            WHERE start.id IN $node_ids
+            RETURN DISTINCT related
+            """
+            result = session.run(
+                query, node_ids=node_ids, context_window=context_window
+            )
+            return [dict(record["related"]) for record in result]
+
+    def _update_session(
+        self, session: ChatSession, context_nodes: List[Dict[str, Any]]
+    ) -> None:
+        new_node_ids = [node["id"] for node in context_nodes if "id" in node]
+
+        session.recent_node_ids = list(
+            dict.fromkeys(new_node_ids + session.recent_node_ids)
+        )[:10]
+        session.last_activity = datetime.now(timezone.utc)
+
+        self.db.commit()
+
+    async def _generate_response_with_context(
+        self, message: str, context_nodes: List[Dict[str, Any]], memory: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return {
+            "text": "Placeholder response",
+            "referenced_entities": [
+                node["id"] for node in context_nodes if "id" in node
+            ],
+        }
