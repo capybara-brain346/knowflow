@@ -6,7 +6,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import UploadFile
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores.pgvector import PGVector
+from langchain_postgres import PGVector
 from langchain_community.document_loaders import (
     PyPDFLoader,
     UnstructuredWordDocumentLoader,
@@ -49,10 +49,10 @@ class AdminService:
                 google_api_key=settings.GOOGLE_API_KEY,
             )
 
-            self.vector_store = PGVector.from_existing_index(
-                embedding=self.embeddings,
+            self.vector_store = PGVector(
+                connection=settings.DATABASE_URL,
+                embeddings=self.embeddings,
                 collection_name=settings.VECTOR_COLLECTION_NAME,
-                connection_string=settings.DATABASE_URL,
             )
 
             logger.info("AdminService initialized successfully")
@@ -69,16 +69,20 @@ class AdminService:
             loader_map = {
                 "application/pdf": lambda path: PyPDFLoader(path),
                 "application/msword": lambda path: UnstructuredWordDocumentLoader(path),
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": lambda path: UnstructuredWordDocumentLoader(path),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": lambda path: UnstructuredWordDocumentLoader(
+                    path
+                ),
                 "application/vnd.ms-excel": lambda path: UnstructuredExcelLoader(path),
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": lambda path: UnstructuredExcelLoader(path),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": lambda path: UnstructuredExcelLoader(
+                    path
+                ),
                 "text/csv": lambda path: CSVLoader(path),
                 "text/plain": lambda path: TextLoader(path),
             }
-            
+
             if mime_type not in loader_map:
                 raise ValidationException(f"Unsupported file type: {mime_type}")
-            
+
             return loader_map[mime_type](file_path)
         except Exception as e:
             logger.error(f"Error creating document loader: {str(e)}", exc_info=True)

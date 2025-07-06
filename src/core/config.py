@@ -64,8 +64,8 @@ class Settings(BaseSettings):
     TOP_K_RESULTS: int = Field(default=3, env="TOP_K_RESULTS")
 
     # Rate Limiting
-    RATE_LIMIT_CALLS: int = Field(default=100, env="RATE_LIMIT_CALLS")
-    RATE_LIMIT_PERIOD: int = Field(default=60, env="RATE_LIMIT_PERIOD")
+    RATE_LIMIT_CALLS: int = Field(env="RATE_LIMIT_CALLS")
+    RATE_LIMIT_PERIOD: int = Field(env="RATE_LIMIT_PERIOD")
     RATE_LIMIT_EXCLUDED_PATHS: set[str] = Field(
         default={"/health", "/health/detailed"}, env="RATE_LIMIT_EXCLUDED_PATHS"
     )

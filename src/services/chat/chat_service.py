@@ -1,7 +1,7 @@
 import os
 from typing import List
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores.pgvector import PGVector
+from langchain_postgres import PGVector
 from langchain_groq import ChatGroq
 from langchain.schema import HumanMessage, SystemMessage
 
@@ -18,10 +18,10 @@ class ChatService:
                 google_api_key=settings.GOOGLE_API_KEY,
             )
 
-            self.vector_store = PGVector.from_existing_index(
-                embedding=self.embeddings,
+            self.vector_store = PGVector(
+                connection=settings.DATABASE_URL,
+                embeddings=self.embeddings,
                 collection_name=settings.VECTOR_COLLECTION_NAME,
-                connection_string=settings.DATABASE_URL,
             )
 
             self.llm = ChatGroq(
