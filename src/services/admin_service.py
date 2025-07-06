@@ -1,8 +1,6 @@
 import uuid
 import tempfile
 import os
-import boto3
-from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import UploadFile
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -23,6 +21,7 @@ from src.core.exceptions import (
 )
 from src.core.logging import logger
 from src.services.graph_service import GraphService
+from src.services.storage_service import StorageService
 
 
 class AdminService:
@@ -38,13 +37,7 @@ class AdminService:
 
     def __init__(self):
         try:
-            self.s3_client = boto3.client(
-                "s3",
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                region_name=settings.AWS_REGION,
-            )
-            self.bucket_name = settings.S3_BUCKET_NAME
+            self.storage_service = StorageService()
             self.embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.GEMINI_EMBEDDING_MODEL,
                 google_api_key=settings.GOOGLE_API_KEY,
@@ -111,24 +104,15 @@ class AdminService:
         doc_id = str(uuid.uuid4())
         try:
             file_content = await file.read()
+            file_key = f"documents/{doc_id}/{file.filename}"
 
             logger.debug(f"Uploading file {file.filename} to S3 with doc_id: {doc_id}")
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=f"documents/{doc_id}/{file.filename}",
-                Body=file_content,
-                ContentType=file.content_type,
+            self.storage_service.upload_file_obj(
+                file_key=file_key, file_obj=file_content, content_type=file.content_type
             )
             logger.info(f"Successfully uploaded file to S3: {file.filename}")
 
             return doc_id
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"S3 error during document upload: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to upload document to S3",
-                service_name="S3",
-                extra={"error": str(e), "doc_id": doc_id},
-            )
         except Exception as e:
             logger.error(
                 f"Unexpected error during document upload: {str(e)}", exc_info=True
@@ -142,30 +126,24 @@ class AdminService:
     async def index_document(self, doc_id: str) -> None:
         try:
             logger.debug(f"Retrieving document from S3: {doc_id}")
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix=f"documents/{doc_id}/",
-            )
+            files = self.storage_service.list_files(prefix=f"documents/{doc_id}/")
 
-            if not response.get("Contents"):
+            if not files:
                 logger.error(f"Document not found in S3: {doc_id}")
                 raise NotFoundException(f"Document not found: {doc_id}")
 
-            for obj in response.get("Contents", []):
-                logger.debug(f"Processing file for indexing: {obj['Key']}")
+            for file_info in files:
+                logger.debug(f"Processing file for indexing: {file_info['key']}")
 
-                file_metadata = self.s3_client.head_object(
-                    Bucket=self.bucket_name, Key=obj["Key"]
-                )
+                file_metadata = self.storage_service.get_file_metadata(file_info["key"])
                 content_type = file_metadata.get("ContentType", "text/plain")
 
                 with tempfile.NamedTemporaryFile(
                     suffix=self.SUPPORTED_MIMETYPES.get(content_type, ".txt"),
                     delete=False,
                 ) as temp_file:
-                    self.s3_client.download_fileobj(
-                        Bucket=self.bucket_name, Key=obj["Key"], Fileobj=temp_file
-                    )
+                    file_obj = self.storage_service.download_file(file_info["key"])
+                    temp_file.write(file_obj.read())
                     temp_file_path = temp_file.name
 
                 try:
@@ -185,7 +163,7 @@ class AdminService:
                             {
                                 "doc_id": doc_id,
                                 "chunk_id": i,
-                                "source": obj["Key"],
+                                "source": file_info["key"],
                                 "content_type": content_type,
                             }
                         )
@@ -217,15 +195,6 @@ class AdminService:
                         os.unlink(temp_file_path)
 
         except NotFoundException:
-            raise
-        except (BotoCoreError, ClientError) as e:
-            logger.error(f"S3 error during document indexing: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to retrieve document from S3",
-                service_name="S3",
-                extra={"error": str(e), "doc_id": doc_id},
-            )
-        except ValidationException:
             raise
         except Exception as e:
             logger.error(

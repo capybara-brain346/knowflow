@@ -1,66 +1,30 @@
-from fastapi import APIRouter, status, UploadFile, File
-from typing import Dict
+from typing import Annotated
+from fastapi import APIRouter, Depends, UploadFile, BackgroundTasks
+from sqlalchemy.orm import Session
 
+from src.core.database import get_db
+from src.core.auth import get_current_admin
 from src.services.admin_service import AdminService
-from src.core.exceptions import (
-    ValidationException,
-    ExternalServiceException,
-    NotFoundException,
-)
-from src.core.logging import logger
+from src.models.database import User
 
 router = APIRouter()
-admin_service = AdminService()
 
 
-@router.post("/upload-doc", status_code=status.HTTP_201_CREATED)
-async def upload_document(file: UploadFile = File(...)) -> Dict[str, str]:
-    try:
-        if not file.filename:
-            raise ValidationException("No file provided")
-
-        logger.info(f"Uploading document: {file.filename}")
-        doc_id = await admin_service.upload_document(file)
-        logger.info(f"Document uploaded successfully with ID: {doc_id}")
-
-        return {"message": "Document uploaded successfully", "doc_id": doc_id}
-    except ValidationException as e:
-        logger.error(f"Validation error during document upload: {str(e)}")
-        raise
-    except ExternalServiceException as e:
-        logger.error(f"External service error during document upload: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(
-            f"Unexpected error during document upload: {str(e)}", exc_info=True
-        )
-        raise ExternalServiceException(
-            message="Failed to upload document",
-            service_name="S3",
-            extra={"error": str(e)},
-        )
+def get_admin_service():
+    return AdminService()
 
 
-@router.post("/index-doc/{doc_id}", status_code=status.HTTP_200_OK)
-async def index_document(doc_id: str) -> Dict[str, str]:
-    try:
-        logger.info(f"Starting document indexing for doc_id: {doc_id}")
-        await admin_service.index_document(doc_id)
-        logger.info(f"Document indexed successfully: {doc_id}")
-
-        return {"message": "Document indexed successfully", "doc_id": doc_id}
-    except NotFoundException as e:
-        logger.error(f"Document not found during indexing: {str(e)}")
-        raise
-    except ExternalServiceException as e:
-        logger.error(f"External service error during document indexing: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(
-            f"Unexpected error during document indexing: {str(e)}", exc_info=True
-        )
-        raise ExternalServiceException(
-            message="Failed to index document",
-            service_name="Vector Store",
-            extra={"error": str(e), "doc_id": doc_id},
-        )
+@router.post("/documents/upload")
+async def upload_document(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    current_admin: Annotated[User, Depends(get_current_admin)],
+    admin_service: Annotated[AdminService, Depends(get_admin_service)],
+):
+    """
+    Upload and process a document. Only accessible by admin users.
+    The document will be processed and indexed in the background.
+    """
+    doc_id = await admin_service.upload_document(file)
+    background_tasks.add_task(admin_service.index_document, doc_id)
+    return {"doc_id": doc_id, "status": "processing"}

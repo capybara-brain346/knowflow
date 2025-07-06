@@ -1,12 +1,25 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.core.config import settings
 from src.routes import auth_routes, admin_routes, chat_routes, graph_routes
 from src.core.middleware import setup_middleware
+from src.core.database import init_db
+from src.core.logging import logger
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Initializing database...")
+    init_db()
+    logger.info("Database initialized successfully")
+    yield
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
+    lifespan=lifespan,
 )
 
 setup_middleware(app)
