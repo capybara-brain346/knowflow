@@ -18,7 +18,6 @@ class StorageService:
         self.bucket_name = settings.S3_BUCKET_NAME
 
     def _get_user_prefixed_key(self, user_id: int, file_key: str) -> str:
-        """Generate a user-specific S3 key"""
         user_prefix = f"user_{user_id}/"
         clean_file_key = file_key.lstrip("/")
         return f"{user_prefix}{clean_file_key}"
@@ -30,10 +29,6 @@ class StorageService:
         file_obj: BinaryIO,
         content_type: Optional[str] = None,
     ) -> str:
-        """
-        Upload a file to S3 with user isolation
-        Returns the full S3 key of the uploaded file
-        """
         s3_key = self._get_user_prefixed_key(user_id, file_key)
         return self.upload_file_obj(s3_key, file_obj, content_type)
 
@@ -43,7 +38,6 @@ class StorageService:
         file_obj: BinaryIO,
         content_type: Optional[str] = None,
     ) -> str:
-        """Upload a file to S3 without user isolation (for admin use)"""
         try:
             extra_args = {}
             if content_type:
@@ -60,7 +54,6 @@ class StorageService:
             )
 
     def download_file(self, file_key: str) -> BinaryIO:
-        """Download a file from S3 without user isolation (for admin use)"""
         try:
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=file_key)
             return response["Body"]
@@ -75,17 +68,14 @@ class StorageService:
             )
 
     def get_user_file(self, user_id: int, file_key: str) -> BinaryIO:
-        """Download a file from S3 with user isolation"""
         s3_key = self._get_user_prefixed_key(user_id, file_key)
         return self.download_file(s3_key)
 
     def delete_file(self, user_id: int, file_key: str) -> None:
-        """Delete a file from S3 with user isolation"""
         s3_key = self._get_user_prefixed_key(user_id, file_key)
         self._delete_file_obj(s3_key)
 
     def _delete_file_obj(self, file_key: str) -> None:
-        """Delete a file from S3 without user isolation (for admin use)"""
         try:
             self.s3_client.delete_object(Bucket=self.bucket_name, Key=file_key)
         except ClientError as e:
@@ -95,10 +85,6 @@ class StorageService:
             )
 
     def list_files(self, user_id: Optional[int] = None, prefix: str = "") -> list:
-        """
-        List files in S3 directory
-        If user_id is provided, list only files in user's directory
-        """
         try:
             if user_id is not None:
                 prefix = self._get_user_prefixed_key(user_id, prefix)
@@ -136,7 +122,6 @@ class StorageService:
             )
 
     def get_file_metadata(self, file_key: str) -> Dict[str, Any]:
-        """Get file metadata from S3 without user isolation (for admin use)"""
         try:
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=file_key)
             return {
