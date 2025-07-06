@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status, UploadFile, File
 from typing import Dict
 
-from src.services.admin.admin_service import AdminService
+from src.services.admin_service import AdminService
 from src.core.exceptions import (
     ValidationException,
     ExternalServiceException,

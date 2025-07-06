@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from src.core.config import settings
-from src.routes import auth_routes, admin_routes, chat_routes
+from src.routes import auth_routes, admin_routes, chat_routes, graph_routes
 from src.core.middleware import setup_middleware
 
 app = FastAPI(
@@ -42,6 +42,10 @@ app.include_router(
 
 app.include_router(
     chat_routes.router, prefix=f"{settings.API_V1_PREFIX}/chat", tags=["Chat"]
+)
+
+app.include_router(
+    graph_routes.router, prefix=f"{settings.API_V1_PREFIX}/graph", tags=["Graph"]
 )
 
 if __name__ == "__main__":

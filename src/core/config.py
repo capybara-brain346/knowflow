@@ -41,6 +41,11 @@ class Settings(BaseSettings):
         env="DATABASE_URL",
     )
 
+    # Neo4j
+    NEO4J_URI: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
+    NEO4J_USER: str = Field(default="neo4j", env="NEO4J_USER")
+    NEO4J_PASSWORD: str = Field(..., env="NEO4J_PASSWORD")
+
     # AWS S3
     AWS_ACCESS_KEY_ID: str = Field(..., env="AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
@@ -62,6 +67,11 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = Field(default=1000, env="CHUNK_SIZE")
     CHUNK_OVERLAP: int = Field(default=200, env="CHUNK_OVERLAP")
     TOP_K_RESULTS: int = Field(default=3, env="TOP_K_RESULTS")
+
+    # Graph Store
+    GRAPH_BATCH_SIZE: int = Field(default=100, env="GRAPH_BATCH_SIZE")
+    GRAPH_MAX_NODES: int = Field(default=1000, env="GRAPH_MAX_NODES")
+    GRAPH_MAX_RELATIONSHIPS: int = Field(default=5000, env="GRAPH_MAX_RELATIONSHIPS")
 
     # Rate Limiting
     RATE_LIMIT_CALLS: int = Field(env="RATE_LIMIT_CALLS")

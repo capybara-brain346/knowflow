@@ -22,6 +22,7 @@ from src.core.exceptions import (
     ValidationException,
 )
 from src.core.logging import logger
+from src.services.graph_service import GraphService
 
 
 class AdminService:
@@ -54,6 +55,8 @@ class AdminService:
                 embeddings=self.embeddings,
                 collection_name=settings.VECTOR_COLLECTION_NAME,
             )
+
+            self.graph_service = GraphService()
 
             logger.info("AdminService initialized successfully")
         except Exception as e:
@@ -125,7 +128,7 @@ class AdminService:
             )
             raise ExternalServiceException(
                 message="Failed to process document upload",
-                service_name="AdminService",
+                service_name="S3",
                 extra={"error": str(e), "doc_id": doc_id},
             )
 
@@ -170,6 +173,7 @@ class AdminService:
                     chunks = text_splitter.split_documents(documents)
                     logger.info(f"Created {len(chunks)} chunks for document: {doc_id}")
 
+                    # Store in vector store
                     for i, chunk in enumerate(chunks):
                         chunk.metadata.update(
                             {
@@ -182,7 +186,15 @@ class AdminService:
 
                     logger.debug(f"Adding document chunks to vector store: {doc_id}")
                     self.vector_store.add_documents(chunks)
-                    logger.info(f"Successfully indexed document: {doc_id}")
+                    logger.info(
+                        f"Successfully indexed document in vector store: {doc_id}"
+                    )
+
+                    # Extract and store graph knowledge
+                    logger.debug(f"Extracting graph knowledge: {doc_id}")
+                    full_text = "\n\n".join([chunk.page_content for chunk in chunks])
+                    self.graph_service.store_graph_knowledge(doc_id, full_text)
+                    logger.info(f"Successfully stored graph knowledge: {doc_id}")
 
                 finally:
                     if os.path.exists(temp_file_path):
