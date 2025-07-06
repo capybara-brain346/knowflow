@@ -22,4 +22,5 @@ dependencies = [
     "neo4j>=5.28.1",
     "passlib>=1.7.4",
     "python-jose>=3.5.0",
+    "bcrypt>=4.3.0",
 ]
