@@ -1,9 +1,7 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
-from src.core.logging import logger
-from src.routes import auth_routes, search_routes
+from src.routes import auth_routes, admin_routes, chat_routes
 from src.core.middleware import setup_middleware
 
 app = FastAPI(
@@ -39,7 +37,11 @@ app.include_router(
 )
 
 app.include_router(
-    search_routes.router, prefix=f"{settings.API_V1_PREFIX}/search", tags=["Search"]
+    admin_routes.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=["Admin"]
+)
+
+app.include_router(
+    chat_routes.router, prefix=f"{settings.API_V1_PREFIX}/chat", tags=["Chat"]
 )
 
 if __name__ == "__main__":

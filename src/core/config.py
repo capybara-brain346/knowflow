@@ -36,7 +36,32 @@ class Settings(BaseSettings):
     )
 
     # Database
-    DATABASE_URL: str = Field(default="sqlite:///./knowflow.db", env="DATABASE_URL")
+    DATABASE_URL: str = Field(
+        default="postgresql://postgres:postgres@localhost:5432/knowflow",
+        env="DATABASE_URL",
+    )
+
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str = Field(..., env="AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
+    AWS_REGION: str = Field(default="us-east-1", env="AWS_REGION")
+    S3_BUCKET_NAME: str = Field(..., env="S3_BUCKET_NAME")
+
+    # AI Models
+    GOOGLE_API_KEY: str = Field(..., env="GOOGLE_API_KEY")
+    GROQ_API_KEY: str = Field(..., env="GROQ_API_KEY")
+    GEMINI_EMBEDDING_MODEL: str = Field(
+        default="models/embedding-001", env="GEMINI_EMBEDDING_MODEL"
+    )
+    GROQ_MODEL_NAME: str = Field(default="mixtral-8x7b-32768", env="GROQ_MODEL_NAME")
+
+    # Vector Store
+    VECTOR_COLLECTION_NAME: str = Field(
+        default="documents", env="VECTOR_COLLECTION_NAME"
+    )
+    CHUNK_SIZE: int = Field(default=1000, env="CHUNK_SIZE")
+    CHUNK_OVERLAP: int = Field(default=200, env="CHUNK_OVERLAP")
+    TOP_K_RESULTS: int = Field(default=3, env="TOP_K_RESULTS")
 
     # Rate Limiting
     RATE_LIMIT_CALLS: int = Field(default=100, env="RATE_LIMIT_CALLS")
