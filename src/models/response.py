@@ -41,12 +41,13 @@ class MessageResponse(BaseModel):
 
 
 class ChatSessionResponse(BaseModel):
-    id: int
+    id: str
     title: str
-    created_at: datetime
-    updated_at: datetime
-    messages: List[MessageResponse]
     user_id: int
+    memory_context: Dict[str, Any] = Field(default_factory=dict)
+    recent_node_ids: List[str] = Field(default_factory=list)
+    last_activity: datetime
+    messages: List[MessageResponse]
 
     class Config:
         from_attributes = True

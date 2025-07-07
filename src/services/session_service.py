@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy.orm import Session
+import uuid
 
 from src.models.database import ChatSession, Message, User
 
@@ -11,6 +12,7 @@ class SessionService:
 
     def create_session(self, user_id: int, title: Optional[str] = None) -> ChatSession:
         session = ChatSession(
+            id=str(uuid.uuid4()),
             user_id=user_id,
             title=title
             or f"Chat {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",

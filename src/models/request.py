@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Auth Models
 class UserLogin(BaseModel):
-    username: str
+    email: EmailStr
     password: str = Field(..., min_length=8)
 
 

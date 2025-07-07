@@ -29,7 +29,7 @@ async def login_for_access_token(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -49,11 +49,11 @@ async def login_for_access_token(
 async def login(
     user_data: UserLogin, auth_service: AuthService = Depends(get_auth_service)
 ):
-    user = auth_service.authenticate_user(user_data.username, user_data.password)
+    user = auth_service.authenticate_user(user_data.email, user_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
         )
 
     access_token = auth_service.create_access_token(data={"sub": str(user.id)})

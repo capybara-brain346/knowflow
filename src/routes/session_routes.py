@@ -25,7 +25,7 @@ async def create_session(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = await service.create_session(current_user.id, request.title)
+    session = service.create_session(current_user.id, request.title)
     return ChatSessionResponse.model_validate(session)
 
 
@@ -35,7 +35,7 @@ async def list_sessions(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    sessions = await service.get_user_sessions(current_user.id)
+    sessions = service.get_user_sessions(current_user.id)
     return [ChatSessionListResponse.model_validate(session) for session in sessions]
 
 
@@ -46,7 +46,7 @@ async def get_session(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = await service.get_session(session_id, current_user.id)
+    session = service.get_session(session_id, current_user.id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
@@ -62,20 +62,18 @@ async def send_message(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = await service.get_session(session_id, current_user.id)
+    session = service.get_session(session_id, current_user.id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         )
 
-    message = await service.add_message(
+    await service.add_message(
         session_id=session_id,
         sender="user",
         content=request.content,
         context_used=request.context_used,
     )
-
-    ai_message = await service.get_ai_response(session_id, message.id)
 
     updated_session = await service.get_session(session_id, current_user.id)
     return ChatSessionResponse.model_validate(updated_session)
@@ -88,7 +86,7 @@ async def delete_session(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = await service.get_session(session_id, current_user.id)
+    session = service.get_session(session_id, current_user.id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"

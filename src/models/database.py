@@ -44,6 +44,7 @@ class ChatSession(Base):
 
     id = Column(String, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255))
     memory_context = Column(JSON, nullable=False, default=dict)
     recent_node_ids = Column(JSON, nullable=False, default=list)
     last_activity = Column(
@@ -58,7 +59,7 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True)
-    chat_session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=False)
+    chat_session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
     sender = Column(String(50), nullable=False)
     content = Column(String, nullable=False)
     context_used = Column(JSON)

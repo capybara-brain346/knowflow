@@ -5,11 +5,12 @@ from langchain_postgres import PGVector
 from langchain_groq import ChatGroq
 from langchain.schema import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
-from src.core.database import get_neo4j_driver, get_db
+from src.core.database import get_db
 from src.models.request import FollowUpChatRequest
 from src.models.response import FollowUpChatResponse
 from src.models.database import ChatSession
 from datetime import datetime, timezone
+from neo4j import GraphDatabase
 
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
@@ -35,7 +36,9 @@ class ChatService:
                 groq_api_key=settings.GROQ_API_KEY, model_name=settings.GROQ_MODEL_NAME
             )
 
-            self.neo4j_driver = get_neo4j_driver()
+            self.driver = GraphDatabase.driver(
+                settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+            )
 
             logger.info("ChatService initialized successfully")
         except Exception as e:
@@ -158,7 +161,7 @@ class ChatService:
     async def _get_context_nodes(
         self, node_ids: List[str], context_window: int
     ) -> List[Dict[str, Any]]:
-        with self.neo4j_driver.session() as session:
+        with self.driver.session() as session:
             query = """
             MATCH path = (start)-[*..{context_window}]-(related)
             WHERE start.id IN $node_ids
