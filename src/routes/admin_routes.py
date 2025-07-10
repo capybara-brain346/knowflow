@@ -23,12 +23,11 @@ def get_admin_service():
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile,
-    metadata: DocumentMetadataRequest,
     current_admin: Annotated[User, Depends(get_current_admin)],
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
     background_tasks: BackgroundTasks,
 ):
-    doc_id = await admin_service.upload_document(file, metadata)
+    doc_id = await admin_service.upload_document(file)
     background_tasks.add_task(admin_service.index_document, doc_id)
     return DocumentUploadResponse(
         doc_id=doc_id,
@@ -50,7 +49,7 @@ async def index_document(
     return DocumentIndexResponse(**result)
 
 
-@router.get("/documents", response_model=List[DocumentResponse])
+@router.get("/documents")
 async def list_documents(
     current_admin: Annotated[User, Depends(get_current_admin)],
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
@@ -61,14 +60,14 @@ async def list_documents(
     documents = await admin_service.list_documents(
         status=status, page=page, page_size=page_size
     )
-    return [DocumentResponse.model_validate(doc) for doc in documents]
+    return [doc for doc in documents]
 
 
-@router.get("/documents/{doc_id}", response_model=DocumentResponse)
+@router.get("/documents/{doc_id}")
 async def get_document(
     doc_id: str,
     current_admin: Annotated[User, Depends(get_current_admin)],
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
 ):
     document = await admin_service.get_document(doc_id)
-    return DocumentResponse.model_validate(document)
+    return document

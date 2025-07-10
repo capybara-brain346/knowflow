@@ -22,6 +22,7 @@ from src.core.exceptions import (
 from src.core.logging import logger
 from src.services.graph_service import GraphService
 from src.services.storage_service import StorageService
+from typing import Dict, Any, List, Optional
 
 
 class AdminService:
@@ -103,12 +104,11 @@ class AdminService:
 
         doc_id = str(uuid.uuid4())
         try:
-            file_content = await file.read()
             file_key = f"documents/{doc_id}/{file.filename}"
 
             logger.debug(f"Uploading file {file.filename} to S3 with doc_id: {doc_id}")
             self.storage_service.upload_file_obj(
-                file_key=file_key, file_obj=file_content, content_type=file.content_type
+                file_key=file_key, file_obj=file.file, content_type=file.content_type
             )
             logger.info(f"Successfully uploaded file to S3: {file.filename}")
 
@@ -203,5 +203,83 @@ class AdminService:
             raise ExternalServiceException(
                 message="Failed to index document",
                 service_name="Vector Store",
+                extra={"error": str(e), "doc_id": doc_id},
+            )
+
+    async def list_documents(
+        self, status: Optional[str] = None, page: int = 1, page_size: int = 10
+    ) -> List[Dict[str, Any]]:
+        try:
+            all_files = self.storage_service.list_files(prefix="documents/")
+
+            documents = {}
+            for file in all_files:
+                parts = file["key"].split("/")
+                if len(parts) >= 3:
+                    doc_id = parts[1]
+                    if doc_id not in documents:
+                        file_metadata = self.storage_service.get_file_metadata(
+                            file["key"]
+                        )
+                        documents[doc_id] = {
+                            "doc_id": doc_id,
+                            "filename": parts[2],
+                            "size": file["size"],
+                            "last_modified": file["last_modified"],
+                            "content_type": file_metadata.get(
+                                "ContentType", "application/octet-stream"
+                            ),
+                            "status": "processed",
+                        }
+
+            document_list = list(documents.values())
+
+            if status:
+                document_list = [
+                    doc for doc in document_list if doc["status"] == status
+                ]
+
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+
+            return document_list[start_idx:end_idx]
+
+        except Exception as e:
+            logger.error(f"Failed to list documents: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to list documents",
+                service_name="AdminService",
+                extra={"error": str(e)},
+            )
+
+    async def get_document(self, doc_id: str) -> Dict[str, Any]:
+        try:
+            files = self.storage_service.list_files(prefix=f"documents/{doc_id}/")
+
+            if not files:
+                raise NotFoundException(f"Document not found: {doc_id}")
+
+            file_info = files[0]
+            file_metadata = self.storage_service.get_file_metadata(file_info["key"])
+            filename = file_info["key"].split("/")[-1]
+
+            return {
+                "doc_id": doc_id,
+                "filename": filename,
+                "size": file_info["size"],
+                "last_modified": file_info["last_modified"],
+                "content_type": file_metadata.get(
+                    "ContentType", "application/octet-stream"
+                ),
+                "status": "processed",
+            }
+
+        except NotFoundException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get document {doc_id}: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to get document",
+                service_name="AdminService",
                 extra={"error": str(e), "doc_id": doc_id},
             )
