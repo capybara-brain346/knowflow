@@ -8,7 +8,6 @@ from src.core.database import Base
 
 
 class UserRole(enum.Enum):
-    ADMIN = "admin"
     USER = "user"
 
 
@@ -26,7 +25,6 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,

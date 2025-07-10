@@ -14,7 +14,7 @@ from src.models.response import (
     MessageResponse,
 )
 from src.services.auth_service import AuthService
-from src.models.database import User, UserRole
+from src.models.database import User
 from src.core.auth import get_current_user, get_auth_service
 
 router = APIRouter()
@@ -75,29 +75,7 @@ async def register(
         username=user_data.username, email=user_data.email, password=user_data.password
     )
     return RegisterResponse(
-        message="User registered successfully", username=user.username, role=user.role
-    )
-
-
-@router.post("/register/admin", response_model=RegisterResponse)
-async def register_admin(
-    user_data: UserRegister,
-    current_admin: Annotated[User, Depends(get_current_user)],
-    auth_service: AuthService = Depends(get_auth_service),
-):
-    if current_admin.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can create new admin accounts",
-        )
-
-    user = auth_service.create_admin_user(
-        username=user_data.username, email=user_data.email, password=user_data.password
-    )
-    return RegisterResponse(
-        message="Admin user registered successfully",
-        username=user.username,
-        role=user.role,
+        message="User registered successfully", username=user.username
     )
 
 

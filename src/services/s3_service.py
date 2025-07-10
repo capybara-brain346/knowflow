@@ -7,7 +7,7 @@ from src.core.config import settings
 from src.services.auth_service import AuthService
 
 
-class StorageService:
+class S3Service:
     def __init__(self):
         self.s3_client = boto3.client(
             "s3",
