@@ -2,12 +2,20 @@ from typing import List, Optional, Dict, Any
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import uuid4
-import mimetypes
 from datetime import datetime, timezone
+import PyPDF2
+from io import BytesIO
 
 from src.core.database import get_db
-from src.models.database import Document, DocumentStatus
+from src.models.database import Document, DocumentStatus, DocumentChunk, User
 from src.services.s3_service import S3Service
+from src.core.config import settings
+from src.core.exceptions import ExternalServiceException
+from src.core.logging import logger
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_postgres import PGVector
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.docstore.document import Document as LangchainDocument
 
 
 class DocumentService:
@@ -21,9 +29,39 @@ class DocumentService:
         "text/plain": ".txt",
     }
 
-    def __init__(self, db: Session = next(get_db())):
+    def __init__(
+        self, db: Session = next(get_db()), current_user: Optional[User] = None
+    ):
         self.db = db
         self.storage_service = S3Service()
+        self.current_user = current_user
+        try:
+            self.embeddings = GoogleGenerativeAIEmbeddings(
+                model=settings.GEMINI_EMBEDDING_MODEL,
+                google_api_key=settings.GOOGLE_API_KEY,
+            )
+
+            self.vector_store = PGVector(
+                connection=settings.DATABASE_URL,
+                embeddings=self.embeddings,
+                collection_name=settings.VECTOR_COLLECTION_NAME,
+            )
+
+            self.text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=settings.CHUNK_SIZE,
+                chunk_overlap=settings.CHUNK_OVERLAP,
+            )
+
+            logger.info("DocumentService initialized successfully")
+        except Exception as e:
+            logger.error(
+                f"Failed to initialize DocumentService: {str(e)}", exc_info=True
+            )
+            raise ExternalServiceException(
+                message="Failed to initialize document service",
+                service_name="DocumentService",
+                extra={"error": str(e)},
+            )
 
     async def upload_document(self, file: UploadFile) -> str:
         if file.content_type not in self.SUPPORTED_MIMETYPES:
@@ -34,7 +72,7 @@ class DocumentService:
 
         doc_id = str(uuid4())
         extension = self.SUPPORTED_MIMETYPES[file.content_type]
-        file_key = f"documents/{doc_id}{extension}"
+        file_path = f"documents/{doc_id}{extension}"
 
         document = Document(
             doc_id=doc_id,
@@ -42,11 +80,19 @@ class DocumentService:
             content_type=file.content_type,
             status=DocumentStatus.PENDING,
             doc_metadata={"original_filename": file.filename},
+            user_id=self.current_user.id,
         )
         self.db.add(document)
 
         try:
-            await self.storage_service.upload_file(file_key, file)
+            file_data = await file.read()
+            self.storage_service.upload_file(
+                user_id=self.current_user.id,
+                file_path=file_path,
+                file_data=file_data,
+                content_type=file.content_type,
+            )
+
             document.status = DocumentStatus.PROCESSING
             self.db.commit()
             return doc_id
@@ -70,6 +116,12 @@ class DocumentService:
                 detail=f"Document {doc_id} not found",
             )
 
+        if document.user_id != self.current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document",
+            )
+
         if document.status == DocumentStatus.INDEXED and not force_reindex:
             return {
                 "doc_id": doc_id,
@@ -81,6 +133,42 @@ class DocumentService:
             document.status = DocumentStatus.PROCESSING
             self.db.commit()
 
+            file_path = (
+                f"documents/{doc_id}{self.SUPPORTED_MIMETYPES[document.content_type]}"
+            )
+            file_data = self.storage_service.get_file(
+                user_id=document.user_id, file_path=file_path
+            )
+
+            if document.content_type == "text/plain":
+                content = file_data.decode("utf-8")
+            elif document.content_type == "application/pdf":
+                pdf_reader = PyPDF2.PdfReader(BytesIO(file_data))
+                content = "\n".join(page.extract_text() for page in pdf_reader.pages)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Indexing not supported for file type: {document.content_type}",
+                )
+
+            chunks = self.text_splitter.split_text(content)
+            for i, chunk_content in enumerate(chunks):
+                embedding = self.embeddings.embed_documents([chunk_content])[0]
+
+                chunk = DocumentChunk(
+                    document_id=document.id,
+                    chunk_index=i,
+                    content=chunk_content,
+                    chunk_metadata={"index": i},
+                    embedding_vector=embedding,
+                )
+                self.db.add(chunk)
+
+                self.vector_store.add_texts(
+                    texts=[chunk_content],
+                    metadatas=[{"document_id": document.id, "chunk_index": i}],
+                )
+
             document.status = DocumentStatus.INDEXED
             document.indexed_at = datetime.now(timezone.utc)
             self.db.commit()
@@ -89,6 +177,7 @@ class DocumentService:
                 "doc_id": doc_id,
                 "status": document.status.value,
                 "message": "Document indexed successfully",
+                "chunks_count": len(chunks),
             }
         except Exception as e:
             document.status = DocumentStatus.FAILED

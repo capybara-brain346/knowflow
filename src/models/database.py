@@ -7,10 +7,6 @@ from sqlalchemy.sql import func
 from src.core.database import Base
 
 
-class UserRole(enum.Enum):
-    USER = "user"
-
-
 class DocumentStatus(enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"

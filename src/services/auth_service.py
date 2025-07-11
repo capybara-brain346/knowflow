@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from src.core.config import settings
-from src.models.database import User, UserRole
+from src.models.database import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -32,9 +32,7 @@ class AuthService:
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         return self.db.query(User).filter(User.id == user_id).first()
 
-    def create_user(
-        self, username: str, email: str, password: str, role: UserRole = UserRole.USER
-    ) -> User:
+    def create_user(self, username: str, email: str, password: str) -> User:
         if self.get_user_by_username(username):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -48,7 +46,9 @@ class AuthService:
 
         hashed_password = self.get_password_hash(password)
         user = User(
-            username=username, email=email, hashed_password=hashed_password, role=role
+            username=username,
+            email=email,
+            hashed_password=hashed_password,
         )
         self.db.add(user)
         self.db.commit()
@@ -100,7 +100,7 @@ class AuthService:
         return user
 
     def create_admin_user(self, username: str, email: str, password: str) -> User:
-        return self.create_user(username, email, password, role=UserRole.ADMIN)
+        return self.create_user(username, email, password)
 
     def get_user_s3_prefix(self, user_id: int) -> str:
         return f"user_{user_id}/"

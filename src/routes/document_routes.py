@@ -16,11 +16,25 @@ from src.models.response import (
 router = APIRouter()
 
 
-def get_document_service():
-    return DocumentService()
+def get_document_service(current_user: User = Depends(get_current_user)):
+    return DocumentService(current_user=current_user)
 
 
-@router.post("/documents/upload", response_model=DocumentUploadResponse)
+@router.get("/")
+async def list_documents(
+    current_user: Annotated[User, Depends(get_current_user)],
+    document_service: Annotated[DocumentService, Depends(get_document_service)],
+    status: Optional[str] = Query(None, description="Filter by document status"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+):
+    documents = await document_service.list_documents(
+        status=status, page=page, page_size=page_size
+    )
+    return [doc for doc in documents]
+
+
+@router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -36,7 +50,7 @@ async def upload_document(
     )
 
 
-@router.post("/documents/{doc_id}/index", response_model=DocumentIndexResponse)
+@router.post("/{doc_id}/index", response_model=DocumentIndexResponse)
 async def index_document(
     request: Optional[DocumentIndexRequest],
     doc_id: str,
@@ -49,21 +63,7 @@ async def index_document(
     return DocumentIndexResponse(**result)
 
 
-@router.get("/documents")
-async def list_documents(
-    current_user: Annotated[User, Depends(get_current_user)],
-    document_service: Annotated[DocumentService, Depends(get_document_service)],
-    status: Optional[str] = Query(None, description="Filter by document status"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
-):
-    documents = await document_service.list_documents(
-        status=status, page=page, page_size=page_size
-    )
-    return [doc for doc in documents]
-
-
-@router.get("/documents/{doc_id}")
+@router.get("/{doc_id}")
 async def get_document(
     doc_id: str,
     current_user: Annotated[User, Depends(get_current_user)],

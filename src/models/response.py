@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from src.models.database import UserRole, DocumentStatus
+from src.models.database import DocumentStatus
 
 
 # Auth Models
@@ -9,7 +9,6 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
-    role: UserRole
     created_at: datetime
 
     class Config:
@@ -25,7 +24,6 @@ class TokenResponse(BaseModel):
 class RegisterResponse(BaseModel):
     message: str
     username: str
-    role: UserRole
 
 
 # Chat and Session Models

@@ -1320,6 +1320,7 @@ dependencies = [
     { name = "psycopg-pool" },
     { name = "psycopg2" },
     { name = "pydantic-settings" },
+    { name = "pypdf2" },
     { name = "python-jose" },
     { name = "python-magic" },
     { name = "unstructured", extra = ["all-docs"] },
@@ -1342,6 +1343,7 @@ requires-dist = [
     { name = "psycopg-pool", specifier = ">=3.2.1" },
     { name = "psycopg2", specifier = ">=2.9.10" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
+    { name = "pypdf2", specifier = ">=3.0.1" },
     { name = "python-jose", specifier = ">=3.5.0" },
     { name = "python-magic", specifier = ">=0.4.27" },
     { name = "unstructured", extras = ["all-docs"], specifier = ">=0.18.3" },
@@ -2819,6 +2821,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7b/42/fbc37af367b20fa6c53da81b1780025f6046a0fac8cbf0663a17e743b033/pypdf-5.7.0.tar.gz", hash = "sha256:68c92f2e1aae878bab1150e74447f31ab3848b1c0a6f8becae9f0b1904460b6f", size = 5026120 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/73/9f/78d096ef795a813fa0e1cb9b33fa574b205f2b563d9c1e9366c854cf0364/pypdf-5.7.0-py3-none-any.whl", hash = "sha256:203379453439f5b68b7a1cd43cdf4c5f7a02b84810cefa7f93a47b350aaaba48", size = 305524 },
+]
+
+[[package]]
+name = "pypdf2"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/bb/18dc3062d37db6c491392007dfd1a7f524bb95886eb956569ac38a23a784/PyPDF2-3.0.1.tar.gz", hash = "sha256:a74408f69ba6271f71b9352ef4ed03dc53a31aa404d29b5d31f53bfecfee1440", size = 227419 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/5e/c86a5643653825d3c913719e788e41386bee415c2b87b4f955432f2de6b2/pypdf2-3.0.1-py3-none-any.whl", hash = "sha256:d16e4205cfee272fbdc0568b68d82be796540b1537508cef59388f839c191928", size = 232572 },
 ]
 
 [[package]]

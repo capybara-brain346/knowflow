@@ -4,9 +4,9 @@ from fastapi import FastAPI
 from src.core.config import settings
 from src.routes import (
     auth_routes,
-    admin_routes,
     chat_routes,
     graph_routes,
+    document_routes,
     session_routes,
 )
 from src.core.middleware import setup_middleware
@@ -56,11 +56,13 @@ app.include_router(
 )
 
 app.include_router(
-    admin_routes.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=["Admin"]
+    chat_routes.router, prefix=f"{settings.API_V1_PREFIX}/chat", tags=["Chat"]
 )
 
 app.include_router(
-    chat_routes.router, prefix=f"{settings.API_V1_PREFIX}/chat", tags=["Chat"]
+    document_routes.router,
+    prefix=f"{settings.API_V1_PREFIX}/document",
+    tags=["Documents"],
 )
 
 app.include_router(
