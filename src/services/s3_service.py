@@ -40,8 +40,20 @@ class S3Service:
                 detail=f"Failed to upload file: {str(e)}",
             )
 
-    def get_file(self, user_id: int, file_path: str) -> bytes:
+    def get_file(self, user_id: int, file_path: str, requesting_user_id: int) -> bytes:
         try:
+            if file_path.startswith("documents/"):
+                doc_id = file_path.split("/")[1].split(".")[0]
+                self.auth_service.verify_document_access_through_chunks(
+                    requesting_user_id, doc_id
+                )
+            else:
+                if user_id != requesting_user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied to this file",
+                    )
+
             full_path = f"{self._get_user_path(user_id)}/{file_path.lstrip('/')}"
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=full_path)
             return response["Body"].read()
@@ -55,7 +67,14 @@ class S3Service:
                 detail=f"Failed to download file: {str(e)}",
             )
 
-    def list_user_files(self, user_id: int, prefix: str = "") -> List[Dict[str, Any]]:
+    def list_user_files(
+        self, user_id: int, prefix: str = "", requesting_user_id: int = None
+    ) -> List[Dict[str, Any]]:
+        if requesting_user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this user's files",
+            )
         try:
             full_prefix = f"{self._get_user_path(user_id)}/{prefix.lstrip('/')}"
             response = self.s3_client.list_objects_v2(

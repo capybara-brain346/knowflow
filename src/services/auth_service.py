@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from src.core.config import settings
-from src.models.database import User
+from src.models.database import User, Document, DocumentChunk, DocumentStatus
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -104,3 +104,48 @@ class AuthService:
 
     def get_user_s3_prefix(self, user_id: int) -> str:
         return f"user_{user_id}/"
+
+    def verify_document_access(self, user_id: int, doc_id: str) -> bool:
+        document = self.db.query(Document).filter(Document.doc_id == doc_id).first()
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document {doc_id} not found",
+            )
+        if document.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document",
+            )
+        return True
+
+    def verify_document_access_through_chunks(self, user_id: int, doc_id: str) -> bool:
+        document = (
+            self.db.query(Document)
+            .filter(
+                Document.doc_id == doc_id,
+                Document.user_id == user_id,
+                Document.status == DocumentStatus.INDEXED,
+            )
+            .first()
+        )
+
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document or document not found",
+            )
+
+        chunks_exist = (
+            self.db.query(DocumentChunk)
+            .filter(DocumentChunk.document_id == document.id)
+            .first()
+        )
+
+        if not chunks_exist:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document has no indexed content",
+            )
+
+        return True

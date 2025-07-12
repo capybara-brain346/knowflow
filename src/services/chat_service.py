@@ -16,11 +16,17 @@ from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.services.graph_service import GraphService
+from src.services.auth_service import AuthService
+from fastapi import status
+from src.models.database import Document
+from src.models.database import DocumentChunk
+from src.models.database import DocumentStatus
 
 
 class ChatService:
     def __init__(self, db: Session = None):
         self.db = db or next(get_db())
+        self.auth_service = AuthService(self.db)
         try:
             self.embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.GEMINI_EMBEDDING_MODEL,
@@ -52,12 +58,68 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    def _get_vector_results(self, query: str) -> List[str]:
+    def _get_vector_results(self, query: str, current_user_id: int) -> List[str]:
         try:
-            logger.debug("Searching vector store")
+            logger.debug(f"Starting vector search for user_id: {current_user_id}")
+
+            user_docs = (
+                self.db.query(Document)
+                .filter(
+                    Document.user_id == current_user_id,
+                    Document.status == DocumentStatus.INDEXED,
+                )
+                .all()
+            )
+
+            logger.debug(f"Found {len(user_docs)} indexed documents for user")
+
+            if not user_docs:
+                logger.info("No indexed documents found for user")
+                return []
+
+            doc_chunks = (
+                self.db.query(DocumentChunk)
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .filter(Document.user_id == current_user_id)
+                .all()
+            )
+
+            logger.debug(f"Found {len(doc_chunks)} chunks for user's documents")
+
+            if not doc_chunks:
+                logger.info("No document chunks found")
+                return []
+
             docs = self.vector_store.similarity_search(query, k=settings.TOP_K_RESULTS)
-            logger.info(f"Found {len(docs)} relevant documents in vector store")
-            return [doc.page_content for doc in docs]
+
+            logger.debug(f"Vector search returned {len(docs)} results")
+
+            results = []
+            for doc in docs:
+                try:
+                    metadata = doc.metadata
+                    logger.debug(f"Processing result metadata: {metadata}")
+
+                    chunk_doc = (
+                        self.db.query(Document)
+                        .join(DocumentChunk, Document.id == DocumentChunk.document_id)
+                        .filter(
+                            Document.user_id == current_user_id,
+                            DocumentChunk.document_id == metadata.get("document_id"),
+                        )
+                        .first()
+                    )
+
+                    if chunk_doc:
+                        results.append(doc.page_content)
+                        logger.debug(f"Added result from document {chunk_doc.doc_id}")
+                except Exception as e:
+                    logger.warning(f"Error processing vector search result: {str(e)}")
+                    continue
+
+            logger.info(f"Found {len(results)} authorized results in vector store")
+            return results
+
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}", exc_info=True)
             raise ExternalServiceException(
@@ -102,18 +164,35 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    async def process_query(self, query: str) -> Dict[str, Any]:
+    async def process_query(
+        self, query: str, session_id: str, current_user_id: int
+    ) -> Dict[str, Any]:
         try:
-            vector_results = self._get_vector_results(query)
+            if session_id:
+                session = (
+                    self.db.query(ChatSession)
+                    .filter(
+                        ChatSession.id == session_id,
+                        ChatSession.user_id == current_user_id,
+                    )
+                    .first()
+                )
+                if not session:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied to this chat session",
+                    )
+
+            vector_results = self._get_vector_results(query, current_user_id)
             graph_results = self._get_graph_results(query)
 
             context = self._merge_results(vector_results, graph_results)
 
             logger.debug("Building prompt with merged context")
-            system_prompt = f"""You are a helpful AI assistant. Answer the user's question based on the following context. 
+            system_prompt = f"""You are a helpful AI assistant. Answer the user's question based on the following context.
                 The context includes both semantic search results and structured knowledge graph information.
                 If you cannot find the answer in the context, say so.
-                
+
                 Context:
                 {context}"""
             messages = [
@@ -131,7 +210,7 @@ class ChatService:
                     "vector_results": vector_results,
                     "graph_results": graph_results,
                 },
-                "session_id": None,  # If you don't have a session, set to None
+                "session_id": session_id if session_id else None,
             }
         except Exception as e:
             logger.error(f"Error processing chat query: {str(e)}", exc_info=True)
@@ -142,11 +221,17 @@ class ChatService:
             )
 
     async def follow_up_chat(
-        self, session_id: str, request: FollowUpChatRequest
+        self, session_id: str, request: FollowUpChatRequest, current_user_id: int
     ) -> FollowUpChatResponse:
         session = self._get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        if session.user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this chat session",
+            )
 
         context_nodes = await self._get_context_nodes(
             request.referenced_node_ids or session.recent_node_ids,
