@@ -23,7 +23,9 @@ async def chat(
     try:
         logger.info(f"Processing chat query: {request.query[:50]}...")
         response = await chat_service.process_query(
-            query=request.query, session_id=request.session_id
+            query=request.query,
+            session_id=request.session_id,
+            current_user_id=current_user.id,
         )
         logger.info("Chat response generated successfully")
         return ChatResponse(
@@ -48,7 +50,9 @@ async def follow_up_chat(
     session_id: str,
     request: FollowUpChatRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> FollowUpChatResponse:
     chat_service = ChatService(db)
-    return await chat_service.follow_up_chat(session_id, request)
+    return await chat_service.follow_up_chat(
+        session_id, request, current_user_id=current_user.id
+    )

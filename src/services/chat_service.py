@@ -16,11 +16,16 @@ from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.services.graph_service import GraphService
+from src.services.auth_service import AuthService
+from fastapi import status
+from src.models.database import Document
+from src.models.database import DocumentChunk
 
 
 class ChatService:
     def __init__(self, db: Session = None):
         self.db = db or next(get_db())
+        self.auth_service = AuthService(self.db)
         try:
             self.embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.GEMINI_EMBEDDING_MODEL,
@@ -52,12 +57,27 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    def _get_vector_results(self, query: str) -> List[str]:
+    def _get_vector_results(self, query: str, current_user_id: int) -> List[str]:
         try:
             logger.debug("Searching vector store")
             docs = self.vector_store.similarity_search(query, k=settings.TOP_K_RESULTS)
-            logger.info(f"Found {len(docs)} relevant documents in vector store")
-            return [doc.page_content for doc in docs]
+
+            authorized_docs = []
+            for doc in docs:
+                try:
+                    doc_id = doc.metadata.get("doc_id")
+                    if doc_id:
+                        self.auth_service.verify_document_access_through_chunks(
+                            current_user_id, doc_id
+                        )
+                        authorized_docs.append(doc)
+                except HTTPException:
+                    continue
+
+            logger.info(
+                f"Found {len(authorized_docs)} authorized documents in vector store"
+            )
+            return [doc.page_content for doc in authorized_docs]
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}", exc_info=True)
             raise ExternalServiceException(
@@ -102,18 +122,35 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    async def process_query(self, query: str, session_id: str) -> Dict[str, Any]:
+    async def process_query(
+        self, query: str, session_id: str, current_user_id: int
+    ) -> Dict[str, Any]:
         try:
-            vector_results = self._get_vector_results(query)
+            if session_id:
+                session = (
+                    self.db.query(ChatSession)
+                    .filter(
+                        ChatSession.id == session_id,
+                        ChatSession.user_id == current_user_id,
+                    )
+                    .first()
+                )
+                if not session:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied to this chat session",
+                    )
+
+            vector_results = self._get_vector_results(query, current_user_id)
             graph_results = self._get_graph_results(query)
 
             context = self._merge_results(vector_results, graph_results)
 
             logger.debug("Building prompt with merged context")
-            system_prompt = f"""You are a helpful AI assistant. Answer the user's question based on the following context. 
+            system_prompt = f"""You are a helpful AI assistant. Answer the user's question based on the following context.
                 The context includes both semantic search results and structured knowledge graph information.
                 If you cannot find the answer in the context, say so.
-                
+
                 Context:
                 {context}"""
             messages = [
@@ -142,11 +179,17 @@ class ChatService:
             )
 
     async def follow_up_chat(
-        self, session_id: str, request: FollowUpChatRequest
+        self, session_id: str, request: FollowUpChatRequest, current_user_id: int
     ) -> FollowUpChatResponse:
         session = self._get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        if session.user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this chat session",
+            )
 
         context_nodes = await self._get_context_nodes(
             request.referenced_node_ids or session.recent_node_ids,

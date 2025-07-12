@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from src.core.config import settings
-from src.models.database import User
+from src.models.database import User, Document, DocumentChunk
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -104,3 +104,32 @@ class AuthService:
 
     def get_user_s3_prefix(self, user_id: int) -> str:
         return f"user_{user_id}/"
+
+    def verify_document_access(self, user_id: int, doc_id: str) -> bool:
+        document = self.db.query(Document).filter(Document.doc_id == doc_id).first()
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document {doc_id} not found",
+            )
+        if document.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document",
+            )
+        return True
+
+    def verify_document_access_through_chunks(self, user_id: int, doc_id: str) -> bool:
+        document_exists = (
+            self.db.query(Document)
+            .join(DocumentChunk, Document.id == DocumentChunk.document_id)
+            .filter(Document.doc_id == doc_id, Document.user_id == user_id)
+            .first()
+        )
+
+        if not document_exists:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document or document not found",
+            )
+        return True
