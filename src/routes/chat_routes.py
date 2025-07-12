@@ -22,7 +22,9 @@ async def chat(
 ) -> ChatResponse:
     try:
         logger.info(f"Processing chat query: {request.query[:50]}...")
-        response = await chat_service.process_query(query=request.query)
+        response = await chat_service.process_query(
+            query=request.query, session_id=request.session_id
+        )
         logger.info("Chat response generated successfully")
         return ChatResponse(
             message=response.get("message", ""),

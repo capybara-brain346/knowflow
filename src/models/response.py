@@ -66,7 +66,7 @@ class ChatSessionListResponse(BaseModel):
 class ChatResponse(BaseModel):
     message: str
     context_used: Optional[Dict[str, Any]] = None
-    session_id: Optional[int] = None
+    session_id: Optional[str] = None
 
 
 # Admin Models

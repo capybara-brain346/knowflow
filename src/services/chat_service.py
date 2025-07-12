@@ -102,7 +102,7 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    async def process_query(self, query: str) -> Dict[str, Any]:
+    async def process_query(self, query: str, session_id: str) -> Dict[str, Any]:
         try:
             vector_results = self._get_vector_results(query)
             graph_results = self._get_graph_results(query)
@@ -131,7 +131,7 @@ class ChatService:
                     "vector_results": vector_results,
                     "graph_results": graph_results,
                 },
-                "session_id": None,  # If you don't have a session, set to None
+                "session_id": session_id if session_id else None,
             }
         except Exception as e:
             logger.error(f"Error processing chat query: {str(e)}", exc_info=True)

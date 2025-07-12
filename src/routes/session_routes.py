@@ -41,7 +41,7 @@ async def list_sessions(
 
 @router.get("/{session_id}", response_model=ChatSessionResponse)
 async def get_session(
-    session_id: int,
+    session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
