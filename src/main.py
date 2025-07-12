@@ -5,7 +5,6 @@ from src.core.config import settings
 from src.routes import (
     auth_routes,
     chat_routes,
-    graph_routes,
     document_routes,
     session_routes,
 )
@@ -63,10 +62,6 @@ app.include_router(
     document_routes.router,
     prefix=f"{settings.API_V1_PREFIX}/document",
     tags=["Documents"],
-)
-
-app.include_router(
-    graph_routes.router, prefix=f"{settings.API_V1_PREFIX}/graph", tags=["Graph"]
 )
 
 app.include_router(

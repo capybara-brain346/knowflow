@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from neo4j import GraphDatabase
 from langchain_groq import ChatGroq
 from langchain.schema import HumanMessage, SystemMessage
+from datetime import datetime, timezone
 
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
@@ -42,27 +43,36 @@ class GraphService:
                     "nodes": [
                         {
                             "id": "unique_string_id",
-                            "label": "MUST BE EXACTLY ONE OF: Issue, Step, Doc, FAQ (no other values allowed)",
-                            "properties": {"key1": "value1", "key2": "value2"}
+                            "label": "MUST BE ONE OF: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery",
+                            "properties": {
+                                "name": "string",
+                                "content": "string",
+                                "created_at": "timestamp",
+                                "last_updated": "timestamp",
+                                // Additional properties based on node type
+                            }
                         }
                     ],
                     "relationships": [
                         {
                             "start_node": "start_node_id",
                             "end_node": "end_node_id",
-                            "type": "MUST BE EXACTLY ONE OF: HAS_SOLUTION, FOLLOWS, MENTIONS (no other values allowed)",
-                            "properties": {"key1": "value1"}
+                            "type": "MUST BE ONE OF: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF",
+                            "properties": {
+                                "confidence": "float between 0 and 1",
+                                "context": "string describing relationship context"
+                            }
                         }
                     ]
                 }
                 
                 Strict Requirements:
-                1. Node labels MUST be exactly one of: Issue, Step, Doc, FAQ - no variations or other values allowed
-                2. Relationship types MUST be exactly one of: HAS_SOLUTION, FOLLOWS, MENTIONS - no variations or other values allowed
+                1. Node labels MUST be one of: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery
+                2. Relationship types MUST be one of: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF
                 3. All strings must be properly quoted
-                4. Return ONLY the raw JSON object - no markdown formatting, no code blocks, no backticks
+                4. Return ONLY the raw JSON object - no markdown formatting, no code blocks
                 5. All IDs referenced in relationships must exist in nodes
-                6. Do not infer or create relationships unless explicitly stated in the text
+                6. Do not infer relationships unless there's clear evidence in the text
                 7. If no valid nodes or relationships can be extracted, return {"nodes": [], "relationships": []}
                 8. ALWAYS return valid JSON - test your response before returning
                 """
@@ -71,8 +81,8 @@ class GraphService:
             ]
 
             response = self.llm.invoke(messages)
-
             content = response.content.strip()
+
             if content.startswith("```"):
                 content = content.split("\n", 1)[1]
             if content.endswith("```"):
@@ -93,8 +103,29 @@ class GraphService:
                 logger.error("Invalid knowledge graph structure")
                 return {"nodes": [], "relationships": []}
 
-            valid_labels = {"Issue", "Step", "Doc", "FAQ"}
-            valid_types = {"HAS_SOLUTION", "FOLLOWS", "MENTIONS"}
+            valid_labels = {
+                "Document",
+                "Section",
+                "Entity",
+                "Concept",
+                "Keyword",
+                "Tag",
+                "Author",
+                "Department",
+                "FAQ",
+                "UserQuery",
+            }
+            valid_types = {
+                "HAS_SECTION",
+                "MENTIONS",
+                "HAS_TAG",
+                "WRITTEN_BY",
+                "BELONGS_TO",
+                "REFERS_TO",
+                "RELATED_TO",
+                "ANSWERED_BY",
+                "SOURCE_OF",
+            }
 
             node_ids = {node["id"] for node in knowledge["nodes"]}
 
@@ -103,6 +134,12 @@ class GraphService:
                 if node["label"] not in valid_labels:
                     logger.warning(f"Invalid node label: {node['label']}")
                     continue
+                if "properties" not in node:
+                    node["properties"] = {}
+                if "created_at" not in node["properties"]:
+                    node["properties"]["created_at"] = datetime.now(
+                        timezone.utc
+                    ).isoformat()
                 valid_nodes.append(node)
 
             valid_relationships = []
@@ -113,6 +150,10 @@ class GraphService:
                 if rel["start_node"] not in node_ids or rel["end_node"] not in node_ids:
                     logger.warning("Relationship references non-existent node")
                     continue
+                if "properties" not in rel:
+                    rel["properties"] = {}
+                if "confidence" not in rel["properties"]:
+                    rel["properties"]["confidence"] = 1.0
                 valid_relationships.append(rel)
 
             return {"nodes": valid_nodes, "relationships": valid_relationships}
@@ -126,12 +167,25 @@ class GraphService:
             knowledge = self._extract_graph_knowledge(text)
 
             with self.driver.session() as session:
+                session.run(
+                    """
+                    MERGE (d:Document {id: $doc_id})
+                    SET d.created_at = datetime(),
+                        d.last_updated = datetime()
+                    """,
+                    doc_id=doc_id,
+                )
+
                 for node in knowledge["nodes"]:
+                    if node["label"] == "Document" and node["id"] == doc_id:
+                        continue
+
                     session.run(
                         """
                         MERGE (n:`{label}` {id: $id})
                         SET n += $properties
                         SET n.doc_id = $doc_id
+                        SET n.last_updated = datetime()
                         """,
                         label=node["label"],
                         id=node["id"],
@@ -146,6 +200,10 @@ class GraphService:
                         MATCH (end {id: $end_id})
                         MERGE (start)-[r:`{type}`]->(end)
                         SET r += $properties
+                        SET r.created_at = CASE WHEN r.created_at IS NULL 
+                                          THEN datetime() 
+                                          ELSE r.created_at END
+                        SET r.last_updated = datetime()
                         """,
                         start_id=rel["start_node"],
                         end_id=rel["end_node"],
@@ -167,8 +225,8 @@ class GraphService:
             messages = [
                 SystemMessage(
                     content="""You are a Cypher query generator. Convert the given natural language query into a Cypher query.
-                Available node labels: Issue, Step, Doc, FAQ
-                Available relationship types: HAS_SOLUTION, FOLLOWS, MENTIONS
+                Available node labels: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery
+                Available relationship types: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF
                 
                 Requirements:
                 1. Return ONLY the raw Cypher query without any markdown formatting, quotes, or explanation
@@ -180,17 +238,11 @@ class GraphService:
                 7. Avoid using WHERE clauses with properties that might not exist
                 8. Return null for non-existent paths/properties
                 
-                Example input: "Find all issues"
-                Example output: OPTIONAL MATCH (i:Issue) RETURN i
+                Example input: "Find all documents about password reset"
+                Example output: MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:MENTIONS]->(c:Concept {name: 'Password Reset'}) RETURN d, s
                 
-                Example input: "Find steps that follow issue X"
-                Example output: OPTIONAL MATCH (i:Issue)-[:FOLLOWS]->(s:Step) RETURN s
-                
-                Example input: "Find support tickets"
-                Example output: OPTIONAL MATCH (i:Issue) RETURN i
-                
-                Example input: "Find issues with specific type"
-                Example output: OPTIONAL MATCH (i:Issue) RETURN i, i.properties
+                Example input: "Find FAQs related to security"
+                Example output: MATCH (f:FAQ)-[:MENTIONS]->(c:Concept {name: 'Security'}) RETURN f
                 """
                 ),
                 HumanMessage(content=query),

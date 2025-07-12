@@ -18,7 +18,7 @@ class UserRegister(BaseModel):
 # Chat Models
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1)
-    session_id: Optional[int] = None
+    session_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
 
 

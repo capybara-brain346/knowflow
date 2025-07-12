@@ -15,6 +15,7 @@ from neo4j import GraphDatabase
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
+from src.services.graph_service import GraphService
 
 
 class ChatService:
@@ -39,6 +40,8 @@ class ChatService:
             self.driver = GraphDatabase.driver(
                 settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
             )
+
+            self.graph_service = GraphService()
 
             logger.info("ChatService initialized successfully")
         except Exception as e:
@@ -99,7 +102,7 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    async def process_query(self, query: str) -> str:
+    async def process_query(self, query: str) -> Dict[str, Any]:
         try:
             vector_results = self._get_vector_results(query)
             graph_results = self._get_graph_results(query)
@@ -121,7 +124,15 @@ class ChatService:
             response = self.llm.invoke(messages)
             logger.info("Successfully generated response")
 
-            return response.content
+            return {
+                "message": response.content,
+                "context_used": {
+                    "context": context,
+                    "vector_results": vector_results,
+                    "graph_results": graph_results,
+                },
+                "session_id": None,  # If you don't have a session, set to None
+            }
         except Exception as e:
             logger.error(f"Error processing chat query: {str(e)}", exc_info=True)
             raise ExternalServiceException(

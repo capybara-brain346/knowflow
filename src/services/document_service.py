@@ -16,6 +16,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document as LangchainDocument
+from src.services.graph_service import GraphService
 
 
 class DocumentService:
@@ -51,6 +52,8 @@ class DocumentService:
                 chunk_size=settings.CHUNK_SIZE,
                 chunk_overlap=settings.CHUNK_OVERLAP,
             )
+
+            self.graph_service = GraphService()
 
             logger.info("DocumentService initialized successfully")
         except Exception as e:
@@ -149,6 +152,16 @@ class DocumentService:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Indexing not supported for file type: {document.content_type}",
+                )
+
+            try:
+                self.graph_service.store_graph_knowledge(doc_id, content)
+                logger.info(
+                    f"Successfully stored graph knowledge for document {doc_id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to store graph knowledge: {str(e)}", exc_info=True
                 )
 
             chunks = self.text_splitter.split_text(content)
