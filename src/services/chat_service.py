@@ -20,6 +20,7 @@ from src.services.auth_service import AuthService
 from fastapi import status
 from src.models.database import Document
 from src.models.database import DocumentChunk
+from src.models.database import DocumentStatus
 
 
 class ChatService:
@@ -59,25 +60,66 @@ class ChatService:
 
     def _get_vector_results(self, query: str, current_user_id: int) -> List[str]:
         try:
-            logger.debug("Searching vector store")
+            logger.debug(f"Starting vector search for user_id: {current_user_id}")
+
+            user_docs = (
+                self.db.query(Document)
+                .filter(
+                    Document.user_id == current_user_id,
+                    Document.status == DocumentStatus.INDEXED,
+                )
+                .all()
+            )
+
+            logger.debug(f"Found {len(user_docs)} indexed documents for user")
+
+            if not user_docs:
+                logger.info("No indexed documents found for user")
+                return []
+
+            doc_chunks = (
+                self.db.query(DocumentChunk)
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .filter(Document.user_id == current_user_id)
+                .all()
+            )
+
+            logger.debug(f"Found {len(doc_chunks)} chunks for user's documents")
+
+            if not doc_chunks:
+                logger.info("No document chunks found")
+                return []
+
             docs = self.vector_store.similarity_search(query, k=settings.TOP_K_RESULTS)
 
-            authorized_docs = []
+            logger.debug(f"Vector search returned {len(docs)} results")
+
+            results = []
             for doc in docs:
                 try:
-                    doc_id = doc.metadata.get("doc_id")
-                    if doc_id:
-                        self.auth_service.verify_document_access_through_chunks(
-                            current_user_id, doc_id
+                    metadata = doc.metadata
+                    logger.debug(f"Processing result metadata: {metadata}")
+
+                    chunk_doc = (
+                        self.db.query(Document)
+                        .join(DocumentChunk, Document.id == DocumentChunk.document_id)
+                        .filter(
+                            Document.user_id == current_user_id,
+                            DocumentChunk.document_id == metadata.get("document_id"),
                         )
-                        authorized_docs.append(doc)
-                except HTTPException:
+                        .first()
+                    )
+
+                    if chunk_doc:
+                        results.append(doc.page_content)
+                        logger.debug(f"Added result from document {chunk_doc.doc_id}")
+                except Exception as e:
+                    logger.warning(f"Error processing vector search result: {str(e)}")
                     continue
 
-            logger.info(
-                f"Found {len(authorized_docs)} authorized documents in vector store"
-            )
-            return [doc.page_content for doc in authorized_docs]
+            logger.info(f"Found {len(results)} authorized results in vector store")
+            return results
+
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}", exc_info=True)
             raise ExternalServiceException(

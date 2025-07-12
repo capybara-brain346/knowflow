@@ -179,7 +179,14 @@ class DocumentService:
 
                 self.vector_store.add_texts(
                     texts=[chunk_content],
-                    metadatas=[{"document_id": document.id, "chunk_index": i}],
+                    metadatas=[
+                        {
+                            "document_id": document.id,
+                            "doc_id": document.doc_id,
+                            "chunk_index": i,
+                            "user_id": document.user_id,
+                        }
+                    ],
                 )
 
             document.status = DocumentStatus.INDEXED
