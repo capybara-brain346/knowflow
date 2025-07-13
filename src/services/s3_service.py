@@ -81,19 +81,22 @@ class S3Service:
 
         return results
 
-    def get_file(self, user_id: int, file_path: str, requesting_user_id: int) -> bytes:
+    def get_file(
+        self, user_id: int, file_path: str, requesting_user_id: Optional[int] = None
+    ) -> bytes:
         try:
-            if file_path.startswith("documents/"):
-                doc_id = file_path.split("/")[1].split(".")[0]
-                self.auth_service.verify_document_access_through_chunks(
-                    requesting_user_id, doc_id
-                )
-            else:
-                if user_id != requesting_user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access denied to this file",
+            if requesting_user_id is not None:
+                if file_path.startswith("documents/"):
+                    doc_id = file_path.split("/")[1].split(".")[0]
+                    self.auth_service.verify_document_access_through_chunks(
+                        requesting_user_id, doc_id
                     )
+                else:
+                    if user_id != requesting_user_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Access denied to this file",
+                        )
 
             full_path = f"{self._get_user_path(user_id)}/{file_path.lstrip('/')}"
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=full_path)

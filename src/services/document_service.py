@@ -66,48 +66,71 @@ class DocumentService:
                 extra={"error": str(e)},
             )
 
-    async def upload_document(self, file: UploadFile) -> str:
-        if file.content_type not in self.SUPPORTED_MIMETYPES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported file type: {file.content_type}",
-            )
+    async def upload_documents(self, files: List[UploadFile]) -> List[Dict[str, Any]]:
+        results = []
 
-        doc_id = str(uuid4())
-        extension = self.SUPPORTED_MIMETYPES[file.content_type]
-        file_path = f"documents/{doc_id}{extension}"
+        for file in files:
+            if file.content_type not in self.SUPPORTED_MIMETYPES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unsupported file type: {file.content_type}",
+                )
 
-        document = Document(
-            doc_id=doc_id,
-            title=file.filename,
-            content_type=file.content_type,
-            status=DocumentStatus.PENDING,
-            doc_metadata={"original_filename": file.filename},
-            user_id=self.current_user.id,
-        )
-        self.db.add(document)
+            doc_id = str(uuid4())
+            extension = self.SUPPORTED_MIMETYPES[file.content_type]
+            file_path = f"documents/{doc_id}{extension}"
 
-        try:
-            file_data = await file.read()
-            self.storage_service.upload_file(
-                user_id=self.current_user.id,
-                file_path=file_path,
-                file_data=file_data,
+            document = Document(
+                doc_id=doc_id,
+                title=file.filename,
                 content_type=file.content_type,
+                status=DocumentStatus.PENDING,
+                doc_metadata={"original_filename": file.filename},
+                user_id=self.current_user.id,
+            )
+            self.db.add(document)
+
+            try:
+                file_data = await file.read()
+                self.storage_service.upload_file(
+                    user_id=self.current_user.id,
+                    file_path=file_path,
+                    file_data=file_data,
+                    content_type=file.content_type,
+                )
+
+                document.status = DocumentStatus.PROCESSING
+                self.db.commit()
+
+                results.append(
+                    {
+                        "doc_id": doc_id,
+                        "filename": file.filename,
+                        "status": "success",
+                        "message": "Document uploaded successfully",
+                    }
+                )
+
+            except Exception as e:
+                self.db.rollback()
+                document.status = DocumentStatus.FAILED
+                document.error_message = str(e)
+                self.db.commit()
+
+                results.append(
+                    {
+                        "filename": file.filename,
+                        "status": "failed",
+                        "message": f"Failed to upload document: {str(e)}",
+                    }
+                )
+
+        if not results:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="No files were uploaded"
             )
 
-            document.status = DocumentStatus.PROCESSING
-            self.db.commit()
-            return doc_id
-        except Exception as e:
-            self.db.rollback()
-            document.status = DocumentStatus.FAILED
-            document.error_message = str(e)
-            self.db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to upload document",
-            )
+        return results
 
     async def index_document(
         self, doc_id: str, force_reindex: bool = False

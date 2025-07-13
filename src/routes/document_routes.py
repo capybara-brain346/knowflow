@@ -1,12 +1,10 @@
 from typing import Annotated, List, Optional
-from fastapi import APIRouter, Depends, UploadFile, BackgroundTasks, Query, Path
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, UploadFile, BackgroundTasks, Query
 
-from src.core.database import get_db
 from src.core.auth import get_current_user
 from src.services.document_service import DocumentService
 from src.models.database import User
-from src.models.request import DocumentMetadataRequest, DocumentIndexRequest
+from src.models.request import DocumentIndexRequest
 from src.models.response import (
     DocumentIndexResponse,
     MultiDocumentUploadResponse,
