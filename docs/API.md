@@ -19,7 +19,7 @@ All API endpoints are prefixed with `/api/v1`
 - **POST** `/auth/token`
 - **Description**: OAuth2 compatible token login
 - **Request Body** (form-data):
-  - `username`: string
+  - `username`: string (email)
   - `password`: string
 - **Response**:
   ```json
@@ -27,9 +27,10 @@ All API endpoints are prefixed with `/api/v1`
     "access_token": "string",
     "token_type": "bearer",
     "user": {
+      "id": "integer",
       "username": "string",
       "email": "string",
-      "role": "string"
+      "created_at": "datetime"
     }
   }
   ```
@@ -41,7 +42,7 @@ All API endpoints are prefixed with `/api/v1`
 - **Request Body**:
   ```json
   {
-    "username": "string",
+    "email": "string",
     "password": "string"
   }
   ```
@@ -50,7 +51,7 @@ All API endpoints are prefixed with `/api/v1`
 #### Register New User
 
 - **POST** `/auth/register`
-- **Description**: Register a new regular user
+- **Description**: Register a new user
 - **Request Body**:
   ```json
   {
@@ -63,18 +64,9 @@ All API endpoints are prefixed with `/api/v1`
   ```json
   {
     "message": "User registered successfully",
-    "username": "string",
-    "role": "string"
+    "username": "string"
   }
   ```
-
-#### Register Admin User
-
-- **POST** `/auth/register/admin`
-- **Description**: Register a new admin user (requires admin privileges)
-- **Auth**: Required (Admin only)
-- **Request Body**: Same as regular registration
-- **Response**: Same as regular registration
 
 #### Logout
 
@@ -94,63 +86,12 @@ All API endpoints are prefixed with `/api/v1`
 - **Response**:
   ```json
   {
+    "id": "integer",
     "username": "string",
     "email": "string",
-    "role": "string"
+    "created_at": "datetime"
   }
   ```
-
-### Admin Routes
-
-#### Upload Document
-
-- **POST** `/admin/documents/upload`
-- **Auth**: Required (Admin only)
-- **Request Body**: Multipart form data
-  - `file`: File
-  - `metadata`: JSON object
-- **Response**:
-  ```json
-  {
-    "doc_id": "string",
-    "status": "processing",
-    "message": "string"
-  }
-  ```
-
-#### Index Document
-
-- **POST** `/admin/documents/{doc_id}/index`
-- **Auth**: Required (Admin only)
-- **Request Body**:
-  ```json
-  {
-    "force_reindex": boolean
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "status": "string",
-    "message": "string"
-  }
-  ```
-
-#### List Documents
-
-- **GET** `/admin/documents`
-- **Auth**: Required (Admin only)
-- **Query Parameters**:
-  - `status`: string (optional)
-  - `page`: integer (default: 1)
-  - `page_size`: integer (default: 10, max: 100)
-- **Response**: Array of document objects
-
-#### Get Document
-
-- **GET** `/admin/documents/{doc_id}`
-- **Auth**: Required (Admin only)
-- **Response**: Document object
 
 ### Chat Routes
 
@@ -162,40 +103,73 @@ All API endpoints are prefixed with `/api/v1`
   ```json
   {
     "query": "string",
-    "session_id": "string",
-    "context": {}
+    "session_id": "string (optional)",
+    "context": "object (optional)"
   }
   ```
 - **Response**:
   ```json
   {
     "message": "string",
-    "context_used": {},
-    "session_id": "string"
+    "context_used": "object (optional)",
+    "session_id": "string (optional)"
   }
   ```
 
-### Graph Routes
+#### Follow-up Chat
 
-#### Query Graph
-
-- **POST** `/graph/query`
+- **POST** `/chat/followup/{session_id}`
 - **Auth**: Required
 - **Request Body**:
   ```json
   {
-    "query": "string",
-    "params": {}
+    "message": "string",
+    "referenced_node_ids": "array[string] (optional)",
+    "context_window": "integer (optional)"
   }
   ```
 - **Response**:
   ```json
   {
-    "nodes": [],
-    "relations": [],
-    "metadata": {}
+    "response": "string",
+    "context_nodes": "array[object]",
+    "memory_context": "object",
+    "referenced_entities": "array[string]"
   }
   ```
+
+### Document Routes
+
+#### List Documents
+
+- **GET** `/documents`
+- **Auth**: Required
+- **Query Parameters**:
+  - `status`: string (optional) - Filter by document status
+  - `page`: integer (default: 1)
+  - `page_size`: integer (default: 10, max: 100)
+- **Response**: Array of document objects
+
+#### Upload Document
+
+- **POST** `/documents/upload`
+- **Auth**: Required
+- **Request Body**: Multipart form data
+  - `file`: File
+- **Response**:
+  ```json
+  {
+    "doc_id": "string",
+    "status": "processing",
+    "message": "string"
+  }
+  ```
+
+#### Get Document
+
+- **GET** `/documents/{doc_id}`
+- **Auth**: Required
+- **Response**: Document object
 
 ### Chat Session Routes
 
@@ -206,7 +180,7 @@ All API endpoints are prefixed with `/api/v1`
 - **Request Body**:
   ```json
   {
-    "title": "string"
+    "title": "string (optional)"
   }
   ```
 - **Response**: Chat session object
@@ -215,13 +189,23 @@ All API endpoints are prefixed with `/api/v1`
 
 - **GET** `/sessions`
 - **Auth**: Required
-- **Response**: Array of chat session objects
+- **Response**: Array of chat session objects with format:
+  ```json
+  {
+    "id": "integer",
+    "title": "string",
+    "created_at": "datetime",
+    "updated_at": "datetime",
+    "message_count": "integer",
+    "last_message_at": "datetime (optional)"
+  }
+  ```
 
 #### Get Session
 
 - **GET** `/sessions/{session_id}`
 - **Auth**: Required
-- **Response**: Chat session object
+- **Response**: Detailed chat session object including messages
 
 #### Send Message in Session
 
@@ -231,7 +215,7 @@ All API endpoints are prefixed with `/api/v1`
   ```json
   {
     "content": "string",
-    "context_used": {}
+    "context_used": "object (optional)"
   }
   ```
 - **Response**: Updated chat session object
@@ -262,5 +246,13 @@ Error responses follow this format:
 
 ```
 
-This API documentation provides a comprehensive overview of all available endpoints, their authentication requirements, request/response formats, and possible error responses. The documentation is structured to be easily readable and follows common REST API documentation practices.
+This update reflects the current state of the API based on the route handlers and models provided in the codebase. The documentation has been updated to include:
+
+1. More accurate authentication response models with user ID and timestamps
+2. The new follow-up chat endpoint
+3. Updated document routes with current request/response models
+4. More detailed session route documentation
+5. Removal of outdated admin-specific routes
+6. More comprehensive request/response model documentation
+7. Current validation rules from the models
 ```

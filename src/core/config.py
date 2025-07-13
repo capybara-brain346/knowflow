@@ -54,11 +54,10 @@ class Settings(BaseSettings):
 
     # AI Models
     GOOGLE_API_KEY: str = Field(..., env="GOOGLE_API_KEY")
-    GROQ_API_KEY: str = Field(..., env="GROQ_API_KEY")
     GEMINI_EMBEDDING_MODEL: str = Field(
         default="models/embedding-001", env="GEMINI_EMBEDDING_MODEL"
     )
-    GROQ_MODEL_NAME: str = Field(default="mixtral-8x7b-32768", env="GROQ_MODEL_NAME")
+    GEMINI_MODEL_NAME: str = Field(default="gemini-pro", env="GEMINI_MODEL_NAME")
 
     # Vector Store
     VECTOR_COLLECTION_NAME: str = Field(

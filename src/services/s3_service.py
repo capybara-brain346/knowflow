@@ -2,6 +2,7 @@ import boto3
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
 from typing import BinaryIO, Optional, Dict, Any, List
+from concurrent.futures import ThreadPoolExecutor
 
 from src.core.config import settings
 
@@ -15,6 +16,7 @@ class S3Service:
             region_name=settings.AWS_REGION,
         )
         self.bucket_name = settings.S3_BUCKET_NAME
+        self.max_workers = 5  # Limit concurrent uploads
 
     def _get_user_path(self, user_id: int) -> str:
         return f"users/{user_id}"
@@ -39,6 +41,45 @@ class S3Service:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to upload file: {str(e)}",
             )
+
+    def upload_files_batch(
+        self,
+        user_id: int,
+        files: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        results = []
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for file in files:
+                future = executor.submit(
+                    self.upload_file,
+                    user_id=user_id,
+                    file_path=file["file_path"],
+                    file_data=file["file_data"],
+                    content_type=file.get("content_type"),
+                )
+                futures.append((file, future))
+
+            for file, future in futures:
+                try:
+                    result = future.result()
+                    results.append(
+                        {
+                            "file_path": file["file_path"],
+                            "status": "success",
+                            "full_path": result,
+                        }
+                    )
+                except Exception as e:
+                    results.append(
+                        {
+                            "file_path": file["file_path"],
+                            "status": "failed",
+                            "error": str(e),
+                        }
+                    )
+
+        return results
 
     def get_file(self, user_id: int, file_path: str, requesting_user_id: int) -> bytes:
         try:

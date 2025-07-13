@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import HTTPException
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 from src.core.database import get_db
@@ -39,8 +39,10 @@ class ChatService:
                 collection_name=settings.VECTOR_COLLECTION_NAME,
             )
 
-            self.llm = ChatGroq(
-                groq_api_key=settings.GROQ_API_KEY, model_name=settings.GROQ_MODEL_NAME
+            self.llm = ChatGoogleGenerativeAI(
+                google_api_key=settings.GOOGLE_API_KEY,
+                model=settings.GEMINI_MODEL_NAME,
+                convert_system_message_to_human=True,
             )
 
             self.driver = GraphDatabase.driver(

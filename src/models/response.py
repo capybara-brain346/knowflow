@@ -69,7 +69,7 @@ class ChatResponse(BaseModel):
     session_id: Optional[str] = None
 
 
-# Admin Models
+# Doument Models
 class DocumentResponse(BaseModel):
     id: int
     doc_id: str
@@ -96,6 +96,11 @@ class DocumentIndexResponse(BaseModel):
     doc_id: str
     status: DocumentStatus
     chunks_processed: int
+    message: str
+
+
+class MultiDocumentUploadResponse(BaseModel):
+    documents: List[Dict[str, Any]]
     message: str
 
 

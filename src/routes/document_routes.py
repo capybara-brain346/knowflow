@@ -8,9 +8,8 @@ from src.services.document_service import DocumentService
 from src.models.database import User
 from src.models.request import DocumentMetadataRequest, DocumentIndexRequest
 from src.models.response import (
-    DocumentResponse,
-    DocumentUploadResponse,
     DocumentIndexResponse,
+    MultiDocumentUploadResponse,
 )
 
 router = APIRouter()
@@ -34,19 +33,19 @@ async def list_documents(
     return [doc for doc in documents]
 
 
-@router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document(
-    file: UploadFile,
+@router.post("/upload", response_model=MultiDocumentUploadResponse)
+async def upload_documents(
+    files: List[UploadFile],
     current_user: Annotated[User, Depends(get_current_user)],
     document_service: Annotated[DocumentService, Depends(get_document_service)],
     background_tasks: BackgroundTasks,
 ):
-    doc_id = await document_service.upload_document(file)
-    background_tasks.add_task(document_service.index_document, doc_id)
-    return DocumentUploadResponse(
-        doc_id=doc_id,
-        status="processing",
-        message="Document uploaded and queued for processing",
+    results = await document_service.upload_documents(files)
+    for doc_id in [doc["doc_id"] for doc in results if "doc_id" in doc]:
+        background_tasks.add_task(document_service.index_document, doc_id)
+    return MultiDocumentUploadResponse(
+        documents=results,
+        message=f"{len(results)} documents uploaded and queued for processing",
     )
 
 

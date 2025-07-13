@@ -1,7 +1,7 @@
 import json
 from typing import List, Dict, Any
 from neo4j import GraphDatabase
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
 from datetime import datetime, timezone
 
@@ -17,8 +17,10 @@ class GraphService:
                 settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
             )
 
-            self.llm = ChatGroq(
-                groq_api_key=settings.GROQ_API_KEY, model_name=settings.GROQ_MODEL_NAME
+            self.llm = ChatGoogleGenerativeAI(
+                google_api_key=settings.GOOGLE_API_KEY,
+                model=settings.GEMINI_MODEL_NAME,
+                convert_system_message_to_human=True,
             )
 
             logger.info("GraphService initialized successfully")
