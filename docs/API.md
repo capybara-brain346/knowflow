@@ -146,21 +146,20 @@ All API endpoints are prefixed with `/api/v1`
 - **Auth**: Required
 - **Query Parameters**:
   - `status`: string (optional) - Filter by document status
-  - `page`: integer (default: 1)
-  - `page_size`: integer (default: 10, max: 100)
+  - `page`: integer (default: 1, min: 1)
+  - `page_size`: integer (default: 10, min: 1, max: 100)
 - **Response**: Array of document objects
 
-#### Upload Document
+#### Upload Documents
 
 - **POST** `/documents/upload`
 - **Auth**: Required
 - **Request Body**: Multipart form data
-  - `file`: File
+  - `files`: Array of files
 - **Response**:
   ```json
   {
-    "doc_id": "string",
-    "status": "processing",
+    "documents": "array[object]",
     "message": "string"
   }
   ```
@@ -183,7 +182,18 @@ All API endpoints are prefixed with `/api/v1`
     "title": "string (optional)"
   }
   ```
-- **Response**: Chat session object
+- **Response**:
+  ```json
+  {
+    "id": "string",
+    "title": "string",
+    "user_id": "integer",
+    "memory_context": "object",
+    "recent_node_ids": "array[string]",
+    "last_activity": "datetime",
+    "messages": "array[object]"
+  }
+  ```
 
 #### List Sessions
 
@@ -246,13 +256,18 @@ Error responses follow this format:
 
 ```
 
-This update reflects the current state of the API based on the route handlers and models provided in the codebase. The documentation has been updated to include:
+The key updates made to the API documentation include:
 
-1. More accurate authentication response models with user ID and timestamps
-2. The new follow-up chat endpoint
-3. Updated document routes with current request/response models
-4. More detailed session route documentation
-5. Removal of outdated admin-specific routes
-6. More comprehensive request/response model documentation
-7. Current validation rules from the models
+1. Updated authentication response models to include user ID and timestamps
+2. Added the new follow-up chat endpoint with its request/response models
+3. Updated document routes to support multiple file uploads
+4. Added document indexing endpoint details
+5. Updated session routes with current request/response models
+6. Added more detailed error response information
+7. Removed outdated endpoints that are no longer in the codebase
+8. Updated all response models to match the current implementation in `response.py`
+9. Added query parameters for pagination in document listing
+10. Updated chat session response models to include memory context and recent node IDs
+
+Would you like me to make any specific adjustments to this updated documentation?
 ```

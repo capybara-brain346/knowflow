@@ -10,7 +10,9 @@ class SessionService:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_session(self, user_id: int, title: Optional[str] = None) -> ChatSession:
+    async def create_session(
+        self, user_id: int, title: Optional[str] = None
+    ) -> ChatSession:
         session = ChatSession(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -22,19 +24,19 @@ class SessionService:
         self.db.refresh(session)
         return session
 
-    def get_user_sessions(self, user_id: int) -> List[ChatSession]:
+    async def get_user_sessions(self, user_id: int) -> List[ChatSession]:
         return self.db.query(ChatSession).filter(ChatSession.user_id == user_id).all()
 
-    def get_session(self, session_id: int, user_id: int) -> Optional[ChatSession]:
+    async def get_session(self, session_id: str, user_id: int) -> Optional[ChatSession]:
         return (
             self.db.query(ChatSession)
             .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
             .first()
         )
 
-    def add_message(
+    async def add_message(
         self,
-        session_id: int,
+        session_id: str,
         sender: str,
         content: str,
         context_used: Optional[dict] = None,
@@ -50,7 +52,13 @@ class SessionService:
         self.db.refresh(message)
         return message
 
-    def get_session_messages(self, session_id: int) -> List[Message]:
+    async def delete_session(self, session_id: str, user_id: int) -> None:
+        session = await self.get_session(session_id, user_id)
+        if session:
+            self.db.delete(session)
+            self.db.commit()
+
+    async def get_session_messages(self, session_id: str) -> List[Message]:
         return (
             self.db.query(Message)
             .filter(Message.chat_session_id == session_id)

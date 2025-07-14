@@ -52,11 +52,11 @@ class ChatSessionResponse(BaseModel):
 
 
 class ChatSessionListResponse(BaseModel):
-    id: int
+    id: str
     title: str
-    created_at: datetime
-    updated_at: datetime
-    message_count: int = Field(default=0)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    message_count: Optional[int] = 0
     last_message_at: Optional[datetime] = None
 
     class Config:

@@ -40,44 +40,112 @@ class GraphService:
             messages = [
                 SystemMessage(
                     content="""You are a knowledge graph extraction assistant. Extract entities and their relationships from the given text.
-                Return ONLY a raw JSON object (no markdown, no ```json, no backticks) with this structure:
-                {
-                    "nodes": [
-                        {
-                            "id": "unique_string_id",
-                            "label": "MUST BE ONE OF: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery",
-                            "properties": {
-                                "name": "string",
-                                "content": "string",
-                                "created_at": "timestamp",
-                                "last_updated": "timestamp",
-                                // Additional properties based on node type
+                    Return ONLY a raw JSON object (no markdown, no ```json, no backticks) with this structure:
+
+                    {
+                        "nodes": [
+                            {
+                                "id": "unique_string_id",
+                                "label": "MUST BE ONE OF: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery",
+                                "properties": {
+                                    "name": "string",
+                                    "content": "string",
+                                    "created_at": "timestamp",
+                                    "last_updated": "timestamp",
+                                    "source": "string, origin of this information",
+                                    "confidence": "float between 0 and 1",
+                                    "metadata": {
+                                        // Additional type-specific properties
+                                    }
+                                }
                             }
-                        }
-                    ],
-                    "relationships": [
-                        {
-                            "start_node": "start_node_id",
-                            "end_node": "end_node_id",
-                            "type": "MUST BE ONE OF: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF",
-                            "properties": {
-                                "confidence": "float between 0 and 1",
-                                "context": "string describing relationship context"
+                        ],
+                        "relationships": [
+                            {
+                                "start_node": "start_node_id",
+                                "end_node": "end_node_id",
+                                "type": "MUST BE ONE OF: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF",
+                                "properties": {
+                                    "confidence": "float between 0 and 1",
+                                    "context": "string describing relationship context",
+                                    "relevance": "float between 0 and 1",
+                                    "extracted_at": "timestamp"
+                                }
                             }
-                        }
-                    ]
-                }
-                
-                Strict Requirements:
-                1. Node labels MUST be one of: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery
-                2. Relationship types MUST be one of: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF
-                3. All strings must be properly quoted
-                4. Return ONLY the raw JSON object - no markdown formatting, no code blocks
-                5. All IDs referenced in relationships must exist in nodes
-                6. Do not infer relationships unless there's clear evidence in the text
-                7. If no valid nodes or relationships can be extracted, return {"nodes": [], "relationships": []}
-                8. ALWAYS return valid JSON - test your response before returning
-                """
+                        ]
+                    }
+
+                    Node Label Requirements:
+                    - Document: Represents a complete document (properties: title, format, version)
+                    - Section: Part of a document (properties: heading, position, section_type)
+                    - Entity: Named entity like person/place/org (properties: entity_type, aliases)
+                    - Concept: Abstract idea or topic (properties: definition, category)
+                    - Keyword: Important term (properties: frequency, importance_score)
+                    - Tag: Classification label (properties: category, parent_tag)
+                    - Author: Content creator (properties: role, department)
+                    - Department: Organizational unit (properties: parent_dept, level)
+                    - FAQ: Frequently asked question (properties: question, answer)
+                    - UserQuery: User's question/search (properties: query_text, intent)
+
+                    Relationship Type Semantics:
+                    - HAS_SECTION: Document → Section (hierarchical document structure)
+                    - MENTIONS: Any → Entity/Concept (references a named entity or concept)
+                    - HAS_TAG: Any → Tag (classification/categorization)
+                    - WRITTEN_BY: Document/Section → Author (authorship)
+                    - BELONGS_TO: Author → Department, Tag → Tag (hierarchical membership)
+                    - REFERS_TO: Any → Any (general reference relationship)
+                    - RELATED_TO: Any → Any (semantic similarity/connection)
+                    - ANSWERED_BY: UserQuery/FAQ → Document/Section (answer source)
+                    - SOURCE_OF: Document/Section → Entity/Concept (origin of information)
+
+                    Strict Requirements:
+                    1. Node IDs must be unique and descriptive (e.g., "doc_123", "concept_ai_ethics")
+                    2. All timestamps must be in ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
+                    3. Confidence scores must be between 0.0 and 1.0
+                    4. All strings must be properly escaped and quoted
+                    5. All relationships must reference existing node IDs
+                    6. Extract only relationships with clear evidence in the text
+                    7. Include source/context for all extracted information
+                    8. Return empty arrays if no valid data can be extracted
+
+                    Example (input):
+                    "The AI Ethics Guidelines document, authored by Dr. Smith from the Research Department, discusses the concept of algorithmic bias in section 2.1"
+
+                    Example (output):
+                    {
+                        "nodes": [
+                            {
+                                "id": "doc_ai_ethics",
+                                "label": "Document",
+                                "properties": {
+                                    "name": "AI Ethics Guidelines",
+                                    "content": "document about AI ethics",
+                                    "created_at": "2024-03-20T10:00:00Z"
+                                }
+                            },
+                            {
+                                "id": "author_smith",
+                                "label": "Author",
+                                "properties": {
+                                    "name": "Dr. Smith",
+                                    "role": "Researcher"
+                                }
+                            }
+                            // ... more nodes
+                        ],
+                        "relationships": [
+                            {
+                                "start_node": "doc_ai_ethics",
+                                "end_node": "author_smith",
+                                "type": "WRITTEN_BY",
+                                "properties": {
+                                    "confidence": 1.0,
+                                    "context": "explicitly stated authorship"
+                                }
+                            }
+                            // ... more relationships
+                        ]
+                    }"""
                 ),
                 HumanMessage(content=text),
             ]

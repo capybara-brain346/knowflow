@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ async def create_session(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.create_session(current_user.id, request.title)
+    session = await service.create_session(current_user.id, request.title)
     return ChatSessionResponse.model_validate(session)
 
 
@@ -35,7 +35,7 @@ async def list_sessions(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    sessions = service.get_user_sessions(current_user.id)
+    sessions = await service.get_user_sessions(current_user.id)
     return [ChatSessionListResponse.model_validate(session) for session in sessions]
 
 
@@ -46,7 +46,7 @@ async def get_session(
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.get_session(session_id, current_user.id)
+    session = await service.get_session(session_id, current_user.id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
@@ -56,13 +56,13 @@ async def get_session(
 
 @router.post("/{session_id}/messages", response_model=ChatSessionResponse)
 async def send_message(
-    session_id: int,
+    session_id: str,
     request: SendMessageRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.get_session(session_id, current_user.id)
+    session = await service.get_session(session_id, current_user.id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
@@ -81,12 +81,12 @@ async def send_message(
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(
-    session_id: int,
+    session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service = SessionService(db)
-    session = service.get_session(session_id, current_user.id)
+    session = await service.get_session(session_id, current_user.id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"

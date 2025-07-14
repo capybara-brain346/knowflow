@@ -10,6 +10,7 @@ from src.models.database import User
 from src.models.request import FollowUpChatRequest
 from src.models.response import FollowUpChatResponse
 from src.core.database import get_db
+from src.services.session_service import SessionService
 
 router = APIRouter()
 chat_service = ChatService()
@@ -19,15 +20,35 @@ chat_service = ChatService()
 async def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ChatResponse:
     try:
         logger.info(f"Processing chat query: {request.query[:50]}...")
+
+        chat_service = ChatService(db)
+        session_service = SessionService(db)
+
         response = await chat_service.process_query(
             query=request.query,
             session_id=request.session_id,
             current_user_id=current_user.id,
         )
-        logger.info("Chat response generated successfully")
+
+        if request.session_id:
+            await session_service.add_message(
+                session_id=request.session_id,
+                sender="user",
+                content=request.query,
+            )
+
+            await session_service.add_message(
+                session_id=request.session_id,
+                sender="assistant",
+                content=response["message"],
+                context_used=response.get("context_used"),
+            )
+
+        logger.info("Chat response generated and saved successfully")
         return ChatResponse(
             message=response.get("message", ""),
             context_used=response.get("context_used"),
@@ -53,6 +74,23 @@ async def follow_up_chat(
     current_user: User = Depends(get_current_user),
 ) -> FollowUpChatResponse:
     chat_service = ChatService(db)
-    return await chat_service.follow_up_chat(
+    session_service = SessionService(db)
+
+    await session_service.add_message(
+        session_id=session_id,
+        sender="user",
+        content=request.message,
+    )
+
+    response = await chat_service.follow_up_chat(
         session_id, request, current_user_id=current_user.id
     )
+
+    await session_service.add_message(
+        session_id=session_id,
+        sender="assistant",
+        content=response.response,
+        context_used={"context_nodes": response.context_nodes},
+    )
+
+    return response
