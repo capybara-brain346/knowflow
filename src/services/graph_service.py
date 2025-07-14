@@ -1,11 +1,11 @@
+from typing import List, Dict, Any, Optional
 import json
-from typing import List, Dict, Any
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, Session
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
-from datetime import datetime, timezone
 
 from src.core.config import settings
+from src.models.graph import GraphKnowledge
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 
@@ -21,6 +21,7 @@ class GraphService:
                 google_api_key=settings.GOOGLE_API_KEY,
                 model=settings.GEMINI_MODEL_NAME,
                 convert_system_message_to_human=True,
+                max_output_tokens=10000,
             )
 
             logger.info("GraphService initialized successfully")
@@ -32,269 +33,60 @@ class GraphService:
                 extra={"error": str(e)},
             )
 
-    def close(self):
+    def close(self) -> None:
         self.driver.close()
 
-    def _extract_graph_knowledge(self, text: str) -> Dict[str, List[Dict[str, Any]]]:
-        try:
-            messages = [
-                SystemMessage(
-                    content="""You are a knowledge graph extraction assistant. Extract entities and their relationships from the given text.
-                    Return ONLY a raw JSON object (no markdown, no ```json, no backticks) with this structure:
-
-                    {
-                        "nodes": [
-                            {
-                                "id": "unique_string_id",
-                                "label": "MUST BE ONE OF: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery",
-                                "properties": {
-                                    "name": "string",
-                                    "content": "string",
-                                    "created_at": "timestamp",
-                                    "last_updated": "timestamp",
-                                    "source": "string, origin of this information",
-                                    "confidence": "float between 0 and 1",
-                                    "metadata": {
-                                        // Additional type-specific properties
-                                    }
-                                }
+    def _get_knowledge_extraction_prompt(self) -> str:
+        return """You are a knowledge graph extraction assistant. Extract entities and their relationships from the given text.
+                Return ONLY a raw JSON object (no markdown, no explanation) with nodes and relationships following this exact structure.
+                
+                IMPORTANT: Keep the graph simple and focused on key concepts.
+                
+                NODE LABELS EXPLAINED:
+                - Document: The main document being processed
+                - Section: A distinct part or segment of a document
+                - Entity: A specific named thing (person, place, product, etc.)
+                - Concept: An abstract idea or topic discussed
+                - Tag: A classification or category label
+                
+                RELATIONSHIP TYPES EXPLAINED:
+                - HAS_SECTION: Links a document to its sections/parts
+                - MENTIONS: Shows when a section/document refers to an entity/concept
+                - HAS_TAG: Connects content to its classification tags
+                - RELATED_TO: Shows a general connection between two nodes
+                
+                {
+                    "nodes": [
+                        {
+                            "id": "unique_string_id",  # Unique identifier for the node
+                            "label": "MUST BE ONE OF: Document, Section, Entity, Concept, Tag",
+                            "properties": {
+                                "name": "string",      # Short, descriptive name of the node
+                                "content": null,       # Optional detailed text content
+                                "created_at": "2024-03-20T10:00:00Z"  # Creation timestamp
                             }
-                        ],
-                        "relationships": [
-                            {
-                                "start_node": "start_node_id",
-                                "end_node": "end_node_id",
-                                "type": "MUST BE ONE OF: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF",
-                                "properties": {
-                                    "confidence": "float between 0 and 1",
-                                    "context": "string describing relationship context",
-                                    "relevance": "float between 0 and 1",
-                                    "extracted_at": "timestamp"
-                                }
+                        }
+                    ],
+                    "relationships": [
+                        {
+                            "start_node": "start_node_id",  # ID of the source node
+                            "end_node": "end_node_id",      # ID of the target node
+                            "type": "MUST BE ONE OF VALID TYPES",
+                            "properties": {
+                                "context": null,      # Optional explanation of the relationship
+                                "extracted_at": "2024-03-20T10:00:00Z"  # When this connection was found
                             }
-                        ]
-                    }
+                        }
+                    ]
+                }
+                
+                DO NOT GENERATE MARKDOWN. ONLY GENERATE JSON.
+                FOCUS ON KEY CONCEPTS AND KEEP THE GRAPH SIMPLE.
+                ENSURE ALL TIMESTAMPS ARE IN ISO FORMAT.
+                """
 
-                    Node Label Requirements:
-                    - Document: Represents a complete document (properties: title, format, version)
-                    - Section: Part of a document (properties: heading, position, section_type)
-                    - Entity: Named entity like person/place/org (properties: entity_type, aliases)
-                    - Concept: Abstract idea or topic (properties: definition, category)
-                    - Keyword: Important term (properties: frequency, importance_score)
-                    - Tag: Classification label (properties: category, parent_tag)
-                    - Author: Content creator (properties: role, department)
-                    - Department: Organizational unit (properties: parent_dept, level)
-                    - FAQ: Frequently asked question (properties: question, answer)
-                    - UserQuery: User's question/search (properties: query_text, intent)
-
-                    Relationship Type Semantics:
-                    - HAS_SECTION: Document → Section (hierarchical document structure)
-                    - MENTIONS: Any → Entity/Concept (references a named entity or concept)
-                    - HAS_TAG: Any → Tag (classification/categorization)
-                    - WRITTEN_BY: Document/Section → Author (authorship)
-                    - BELONGS_TO: Author → Department, Tag → Tag (hierarchical membership)
-                    - REFERS_TO: Any → Any (general reference relationship)
-                    - RELATED_TO: Any → Any (semantic similarity/connection)
-                    - ANSWERED_BY: UserQuery/FAQ → Document/Section (answer source)
-                    - SOURCE_OF: Document/Section → Entity/Concept (origin of information)
-
-                    Strict Requirements:
-                    1. Node IDs must be unique and descriptive (e.g., "doc_123", "concept_ai_ethics")
-                    2. All timestamps must be in ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
-                    3. Confidence scores must be between 0.0 and 1.0
-                    4. All strings must be properly escaped and quoted
-                    5. All relationships must reference existing node IDs
-                    6. Extract only relationships with clear evidence in the text
-                    7. Include source/context for all extracted information
-                    8. Return empty arrays if no valid data can be extracted
-
-                    Example (input):
-                    "The AI Ethics Guidelines document, authored by Dr. Smith from the Research Department, discusses the concept of algorithmic bias in section 2.1"
-
-                    Example (output):
-                    {
-                        "nodes": [
-                            {
-                                "id": "doc_ai_ethics",
-                                "label": "Document",
-                                "properties": {
-                                    "name": "AI Ethics Guidelines",
-                                    "content": "document about AI ethics",
-                                    "created_at": "2024-03-20T10:00:00Z"
-                                }
-                            },
-                            {
-                                "id": "author_smith",
-                                "label": "Author",
-                                "properties": {
-                                    "name": "Dr. Smith",
-                                    "role": "Researcher"
-                                }
-                            }
-                            // ... more nodes
-                        ],
-                        "relationships": [
-                            {
-                                "start_node": "doc_ai_ethics",
-                                "end_node": "author_smith",
-                                "type": "WRITTEN_BY",
-                                "properties": {
-                                    "confidence": 1.0,
-                                    "context": "explicitly stated authorship"
-                                }
-                            }
-                            // ... more relationships
-                        ]
-                    }"""
-                ),
-                HumanMessage(content=text),
-            ]
-
-            response = self.llm.invoke(messages)
-            content = response.content.strip()
-
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1]
-            if content.endswith("```"):
-                content = content.rsplit("\n", 1)[0]
-            content = content.strip()
-
-            try:
-                knowledge = json.loads(content)
-            except json.JSONDecodeError as e:
-                logger.error("Failed to parse LLM response as JSON")
-                return {"nodes": [], "relationships": []}
-
-            if (
-                not isinstance(knowledge, dict)
-                or "nodes" not in knowledge
-                or "relationships" not in knowledge
-            ):
-                logger.error("Invalid knowledge graph structure")
-                return {"nodes": [], "relationships": []}
-
-            valid_labels = {
-                "Document",
-                "Section",
-                "Entity",
-                "Concept",
-                "Keyword",
-                "Tag",
-                "Author",
-                "Department",
-                "FAQ",
-                "UserQuery",
-            }
-            valid_types = {
-                "HAS_SECTION",
-                "MENTIONS",
-                "HAS_TAG",
-                "WRITTEN_BY",
-                "BELONGS_TO",
-                "REFERS_TO",
-                "RELATED_TO",
-                "ANSWERED_BY",
-                "SOURCE_OF",
-            }
-
-            node_ids = {node["id"] for node in knowledge["nodes"]}
-
-            valid_nodes = []
-            for node in knowledge["nodes"]:
-                if node["label"] not in valid_labels:
-                    logger.warning(f"Invalid node label: {node['label']}")
-                    continue
-                if "properties" not in node:
-                    node["properties"] = {}
-                if "created_at" not in node["properties"]:
-                    node["properties"]["created_at"] = datetime.now(
-                        timezone.utc
-                    ).isoformat()
-                valid_nodes.append(node)
-
-            valid_relationships = []
-            for rel in knowledge["relationships"]:
-                if rel["type"] not in valid_types:
-                    logger.warning(f"Invalid relationship type: {rel['type']}")
-                    continue
-                if rel["start_node"] not in node_ids or rel["end_node"] not in node_ids:
-                    logger.warning("Relationship references non-existent node")
-                    continue
-                if "properties" not in rel:
-                    rel["properties"] = {}
-                if "confidence" not in rel["properties"]:
-                    rel["properties"]["confidence"] = 1.0
-                valid_relationships.append(rel)
-
-            return {"nodes": valid_nodes, "relationships": valid_relationships}
-
-        except Exception as e:
-            logger.error(f"Error extracting graph knowledge: {str(e)}")
-            return {"nodes": [], "relationships": []}
-
-    def store_graph_knowledge(self, doc_id: str, text: str) -> None:
-        try:
-            knowledge = self._extract_graph_knowledge(text)
-
-            with self.driver.session() as session:
-                session.run(
-                    """
-                    MERGE (d:Document {id: $doc_id})
-                    SET d.created_at = datetime(),
-                        d.last_updated = datetime()
-                    """,
-                    doc_id=doc_id,
-                )
-
-                for node in knowledge["nodes"]:
-                    if node["label"] == "Document" and node["id"] == doc_id:
-                        continue
-
-                    session.run(
-                        """
-                        MERGE (n:`{label}` {id: $id})
-                        SET n += $properties
-                        SET n.doc_id = $doc_id
-                        SET n.last_updated = datetime()
-                        """,
-                        label=node["label"],
-                        id=node["id"],
-                        properties=node["properties"],
-                        doc_id=doc_id,
-                    )
-
-                for rel in knowledge["relationships"]:
-                    session.run(
-                        """
-                        MATCH (start {id: $start_id})
-                        MATCH (end {id: $end_id})
-                        MERGE (start)-[r:`{type}`]->(end)
-                        SET r += $properties
-                        SET r.created_at = CASE WHEN r.created_at IS NULL 
-                                          THEN datetime() 
-                                          ELSE r.created_at END
-                        SET r.last_updated = datetime()
-                        """,
-                        start_id=rel["start_node"],
-                        end_id=rel["end_node"],
-                        type=rel["type"],
-                        properties=rel["properties"],
-                    )
-
-            logger.info(f"Successfully stored graph knowledge for doc_id: {doc_id}")
-        except Exception as e:
-            logger.error(f"Error storing graph knowledge: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to store graph knowledge",
-                service_name="GraphService",
-                extra={"error": str(e)},
-            )
-
-    def query_graph(self, query: str) -> List[Dict[str, Any]]:
-        try:
-            messages = [
-                SystemMessage(
-                    content="""You are a Cypher query generator. Convert the given natural language query into a Cypher query.
+    def _get_cypher_generation_prompt(self) -> str:
+        return """You are a Cypher query generator. Convert the given natural language query into a Cypher query.
                 Available node labels: Document, Section, Entity, Concept, Keyword, Tag, Author, Department, FAQ, UserQuery
                 Available relationship types: HAS_SECTION, MENTIONS, HAS_TAG, WRITTEN_BY, BELONGS_TO, REFERS_TO, RELATED_TO, ANSWERED_BY, SOURCE_OF
                 
@@ -307,45 +99,143 @@ class GraphService:
                 6. For new/empty databases, use OPTIONAL MATCH to handle missing nodes gracefully
                 7. Avoid using WHERE clauses with properties that might not exist
                 8. Return null for non-existent paths/properties
-                
-                Example input: "Find all documents about password reset"
-                Example output: MATCH (d:Document)-[:HAS_SECTION]->(s:Section)-[:MENTIONS]->(c:Concept {name: 'Password Reset'}) RETURN d, s
-                
-                Example input: "Find FAQs related to security"
-                Example output: MATCH (f:FAQ)-[:MENTIONS]->(c:Concept {name: 'Security'}) RETURN f
                 """
-                ),
-                HumanMessage(content=query),
+
+    def _clean_llm_response(self, response: str) -> str:
+        response = response.strip()
+        if response.startswith("```"):
+            response = response.split("\n", 1)[-1]
+            response = response.rsplit("```", 1)[0]
+        return response.strip().replace("`", "")
+
+    def _parse_knowledge_json(
+        self, raw_response: str
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        try:
+            raw_json = json.loads(raw_response)
+            knowledge = GraphKnowledge.model_validate(raw_json)
+            return knowledge.model_dump()
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            return {"nodes": [], "relationships": []}
+        except Exception as e:
+            logger.error(f"Failed to validate response structure: {e}")
+            return {"nodes": [], "relationships": []}
+
+    def _extract_graph_knowledge(self, text: str) -> Dict[str, List[Dict[str, Any]]]:
+        try:
+            messages = [
+                SystemMessage(content=self._get_knowledge_extraction_prompt()),
+                HumanMessage(content=text),
             ]
 
-            cypher_query = self.llm.invoke(messages).content.strip()
+            raw_response = self.llm.invoke(messages).content.strip()
+            cleaned_response = self._clean_llm_response(raw_response)
+            print("Raw LLM Response:", cleaned_response)
 
-            cypher_query = (
-                cypher_query.replace("```cypher", "")
-                .replace("```", "")
-                .replace("`", "")
-                .strip()
+            return self._parse_knowledge_json(cleaned_response)
+        except Exception as e:
+            logger.error(f"Error extracting graph knowledge: {str(e)}")
+            return {"nodes": [], "relationships": []}
+
+    def _create_document_node(self, session: Session, doc_id: str) -> None:
+        session.run(
+            """
+            MERGE (d:Document {id: $doc_id})
+            SET d.created_at = datetime()
+            """,
+            doc_id=doc_id,
+        )
+
+    def _create_knowledge_node(
+        self, session: Session, node: Dict[str, Any], doc_id: str
+    ) -> None:
+        if node["label"] == "Document" and node["id"] == doc_id:
+            return
+
+        session.run(
+            """
+            MERGE (n:`{label}` {id: $id})
+            SET n += $properties
+            SET n.doc_id = $doc_id
+            """,
+            label=node["label"],
+            id=node["id"],
+            properties=node["properties"],
+            doc_id=doc_id,
+        )
+
+    def _create_relationship(self, session: Session, rel: Dict[str, Any]) -> None:
+        session.run(
+            """
+            MATCH (start {id: $start_id})
+            MATCH (end {id: $end_id})
+            MERGE (start)-[r:`{type}`]->(end)
+            SET r += $properties
+            SET r.created_at = datetime()
+            """,
+            start_id=rel["start_node"],
+            end_id=rel["end_node"],
+            type=rel["type"],
+            properties=rel["properties"],
+        )
+
+    def store_graph_knowledge(self, doc_id: str, text: str) -> None:
+        try:
+            knowledge = self._extract_graph_knowledge(text)
+
+            with self.driver.session() as session:
+                self._create_document_node(session, doc_id)
+
+                for node in knowledge["nodes"]:
+                    self._create_knowledge_node(session, node, doc_id)
+
+                for rel in knowledge["relationships"]:
+                    self._create_relationship(session, rel)
+
+            logger.info(f"Successfully stored graph knowledge for doc_id: {doc_id}")
+        except Exception as e:
+            logger.error(f"Error storing graph knowledge: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to store graph knowledge",
+                service_name="GraphService",
+                extra={"error": str(e)},
             )
 
-            if not any(
-                cypher_query.upper().startswith(cmd)
-                for cmd in [
-                    "MATCH",
-                    "CREATE",
-                    "MERGE",
-                    "RETURN",
-                    "WITH",
-                    "UNWIND",
-                    "CALL",
-                    "OPTIONAL",
-                ]
-            ):
-                raise ExternalServiceException(
-                    message="Invalid Cypher query: must start with a valid Cypher command",
-                    service_name="GraphService",
-                    extra={"query": cypher_query},
-                )
+    def _validate_cypher_query(self, query: str) -> bool:
+        valid_starts = [
+            "MATCH",
+            "CREATE",
+            "MERGE",
+            "RETURN",
+            "WITH",
+            "UNWIND",
+            "CALL",
+            "OPTIONAL",
+        ]
+        return any(query.upper().startswith(cmd) for cmd in valid_starts)
 
+    def _generate_cypher_query(self, query: str) -> str:
+        messages = [
+            SystemMessage(content=self._get_cypher_generation_prompt()),
+            HumanMessage(content=query),
+        ]
+
+        cypher_query = self.llm.invoke(messages).content.strip()
+        cypher_query = self._clean_llm_response(cypher_query)
+
+        if not self._validate_cypher_query(cypher_query):
+            raise ExternalServiceException(
+                message="Invalid Cypher query: must start with a valid Cypher command",
+                service_name="GraphService",
+                extra={"query": cypher_query},
+            )
+
+        return cypher_query
+
+    def query_graph(self, query: str) -> List[Dict[str, Any]]:
+        try:
+            cypher_query = self._generate_cypher_query(query)
             logger.debug(f"Generated Cypher query: {cypher_query}")
 
             with self.driver.session() as session:
