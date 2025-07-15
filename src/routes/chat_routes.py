@@ -1,16 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from src.services.chat_service import ChatService
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
-from src.models.request import ChatRequest
-from src.models.response import ChatResponse
+from src.models.request import ChatRequest, FollowUpChatRequest, RenameChatRequest
+from src.models.response import (
+    ChatResponse,
+    FollowUpChatResponse,
+    RenameChatResponse,
+    DeleteChatResponse,
+)
 from src.core.auth import get_current_user
 from src.models.database import User
-from src.models.request import FollowUpChatRequest
-from src.models.response import FollowUpChatResponse
 from src.core.database import get_db
 from src.services.session_service import SessionService
+
 
 router = APIRouter()
 chat_service = ChatService()
@@ -94,3 +98,55 @@ async def follow_up_chat(
     )
 
     return response
+
+
+@router.put("/{session_id}/rename", response_model=RenameChatResponse)
+async def rename_chat(
+    session_id: str,
+    request: RenameChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RenameChatResponse:
+    try:
+        chat_service = ChatService(db)
+        response = await chat_service.rename_chat_session(
+            session_id=session_id,
+            new_title=request.new_title,
+            current_user_id=current_user.id,
+        )
+        return RenameChatResponse(**response)
+    except ExternalServiceException as e:
+        logger.error(f"External service error during chat rename: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during chat rename: {str(e)}", exc_info=True)
+        raise ExternalServiceException(
+            message="Failed to rename chat session",
+            service_name="ChatService",
+            extra={"error": str(e)},
+        )
+
+
+@router.delete("/{session_id}", response_model=DeleteChatResponse)
+async def delete_chat(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeleteChatResponse:
+    try:
+        chat_service = ChatService(db)
+        response = await chat_service.delete_chat_session(
+            session_id=session_id,
+            current_user_id=current_user.id,
+        )
+        return DeleteChatResponse(**response)
+    except ExternalServiceException as e:
+        logger.error(f"External service error during chat deletion: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during chat deletion: {str(e)}", exc_info=True)
+        raise ExternalServiceException(
+            message="Failed to delete chat session",
+            service_name="ChatService",
+            extra={"error": str(e)},
+        )

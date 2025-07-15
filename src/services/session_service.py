@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import uuid
 
 from src.models.database import ChatSession, Message, User
@@ -31,6 +31,7 @@ class SessionService:
         return (
             self.db.query(ChatSession)
             .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
+            .options(joinedload(ChatSession.messages))
             .first()
         )
 

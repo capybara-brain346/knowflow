@@ -77,3 +77,7 @@ class FollowUpChatRequest(BaseModel):
     message: str
     referenced_node_ids: Optional[List[str]] = None
     context_window: Optional[int] = 5
+
+
+class RenameChatRequest(BaseModel):
+    new_title: str = Field(..., max_length=255)

@@ -105,7 +105,7 @@ class DocumentService:
                 results.append(
                     {
                         "doc_id": doc_id,
-                        "filename": file.filename,
+                        "title": file.filename,
                         "status": "success",
                         "message": "Document uploaded successfully",
                     }
@@ -119,7 +119,7 @@ class DocumentService:
 
                 results.append(
                     {
-                        "filename": file.filename,
+                        "title": file.filename,
                         "status": "failed",
                         "message": f"Failed to upload document: {str(e)}",
                     }

@@ -21,6 +21,7 @@ from fastapi import status
 from src.models.database import Document
 from src.models.database import DocumentChunk
 from src.models.database import DocumentStatus
+from src.models.database import Message
 
 
 class ChatService:
@@ -252,6 +253,72 @@ class ChatService:
             memory_context=session.memory_context,
             referenced_entities=response["referenced_entities"],
         )
+
+    async def rename_chat_session(
+        self, session_id: str, new_title: str, current_user_id: int
+    ) -> Dict[str, Any]:
+        try:
+            session = self._get_session(session_id)
+
+            if not session:
+                raise HTTPException(status_code=404, detail="Chat session not found")
+
+            if session.user_id != current_user_id:
+                raise HTTPException(
+                    status_code=403, detail="Access denied to this chat session"
+                )
+
+            session.title = new_title
+            session.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+
+            return {"session_id": session_id, "title": new_title}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error renaming chat session: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to rename chat session",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
+    async def delete_chat_session(
+        self, session_id: str, current_user_id: int
+    ) -> Dict[str, Any]:
+        try:
+            session = self._get_session(session_id)
+
+            if not session:
+                raise HTTPException(status_code=404, detail="Chat session not found")
+
+            if session.user_id != current_user_id:
+                raise HTTPException(
+                    status_code=403, detail="Access denied to this chat session"
+                )
+
+            self.db.query(Message).filter(
+                Message.chat_session_id == session_id
+            ).delete()
+
+            self.db.query(ChatSession).filter(
+                ChatSession.id == session_id, ChatSession.user_id == current_user_id
+            ).delete()
+
+            self.db.commit()
+
+            return {"session_id": session_id, "status": "deleted"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error deleting chat session: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to delete chat session",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
 
     def _get_session(self, session_id: str) -> ChatSession:
         return self.db.query(ChatSession).filter(ChatSession.id == session_id).first()

@@ -9,9 +9,12 @@ import {
   Text,
   VStack,
   useToast,
+  IconButton,
+  HStack,
 } from "@chakra-ui/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import useChatStore from "../store/chatStore";
+import { EditIcon, CheckIcon, CloseIcon } from "@chakra-ui/icons";
 
 function Chat() {
   const {
@@ -22,10 +25,13 @@ function Chat() {
     setCurrentSession,
     sendMessage,
     deleteSession,
+    renameSession,
   } = useChatStore();
   const messageInputRef = useRef();
   const chatContainerRef = useRef();
   const toast = useToast();
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [newTitle, setNewTitle] = useState("");
 
   useEffect(() => {
     fetchSessions();
@@ -70,6 +76,35 @@ function Chat() {
     await deleteSession(sessionId);
   };
 
+  const handleStartRename = (session) => {
+    setEditingSessionId(session.id);
+    setNewTitle(session.title);
+  };
+
+  const handleCancelRename = () => {
+    setEditingSessionId(null);
+    setNewTitle("");
+  };
+
+  const handleRename = async (sessionId) => {
+    if (!newTitle.trim()) {
+      return;
+    }
+
+    const success = await renameSession(sessionId, newTitle.trim());
+    if (success) {
+      setEditingSessionId(null);
+      setNewTitle("");
+    } else {
+      toast({
+        title: "Failed to rename chat",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
   return (
     <Container maxW="container.xl" h="calc(100vh - 80px)">
       <Grid templateColumns="250px 1fr" h="100%" gap={4}>
@@ -82,28 +117,62 @@ function Chat() {
               <Box
                 key={session.id}
                 p={3}
-                bg={
-                  currentSession?.id === session.id ? "blue.50" : "transparent"
-                }
+                bg={currentSession?.id === session.id ? "blue.50" : "transparent"}
                 borderRadius="md"
                 cursor="pointer"
                 onClick={() => setCurrentSession(session)}
                 position="relative"
               >
-                <Text noOfLines={1}>{session.title}</Text>
-                <Button
-                  size="xs"
-                  position="absolute"
-                  right={2}
-                  top="50%"
-                  transform="translateY(-50%)"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSession(session.id);
-                  }}
-                >
-                  Delete
-                </Button>
+                {editingSessionId === session.id ? (
+                  <HStack>
+                    <Input
+                      size="sm"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                    />
+                    <IconButton
+                      size="sm"
+                      icon={<CheckIcon />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRename(session.id);
+                      }}
+                    />
+                    <IconButton
+                      size="sm"
+                      icon={<CloseIcon />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCancelRename();
+                      }}
+                    />
+                  </HStack>
+                ) : (
+                  <HStack justify="space-between" width="100%">
+                    <Text noOfLines={1}>{session.title}</Text>
+                    <HStack spacing={1}>
+                      <IconButton
+                        size="xs"
+                        icon={<EditIcon />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartRename(session);
+                        }}
+                      />
+                      <Button
+                        size="xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSession(session.id);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </HStack>
+                  </HStack>
+                )}
               </Box>
             ))}
           </VStack>

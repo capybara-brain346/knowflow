@@ -160,3 +160,16 @@ class FollowUpChatResponse(BaseModel):
     context_nodes: List[Dict[str, Any]]
     memory_context: Dict[str, Any]
     referenced_entities: List[str]
+
+
+class RenameChatResponse(BaseModel):
+    session_id: str
+    title: str
+
+    class Config:
+        from_attributes = True
+
+
+class DeleteChatResponse(BaseModel):
+    session_id: str
+    status: str = Field(..., description="Status of the deletion operation")
