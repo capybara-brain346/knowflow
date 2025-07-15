@@ -15,17 +15,28 @@ import Layout from "./components/Layout";
 
 const PrivateRoute = ({ children }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
+
+  if (isLoading) {
+    return null; // or a loading spinner
+  }
+
   return isAuthenticated ? children : <Navigate to="/login" />;
 };
 
 function App() {
   const getProfile = useAuthStore((state) => state.getProfile);
+  const isLoading = useAuthStore((state) => state.isLoading);
 
   useEffect(() => {
     if (localStorage.getItem("token")) {
       getProfile();
     }
   }, [getProfile]);
+
+  if (isLoading) {
+    return null; // or a loading spinner
+  }
 
   return (
     <ChakraProvider>

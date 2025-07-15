@@ -39,11 +39,19 @@ const useAuthStore = create((set) => ({
     },
 
     getProfile: async () => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            set({ user: null, isAuthenticated: false, isLoading: false });
+            return;
+        }
+
+        set({ isLoading: true });
         try {
             const response = await client.get('/auth/me');
-            set({ user: response.data, isAuthenticated: true });
+            set({ user: response.data, isAuthenticated: true, isLoading: false });
         } catch (error) {
-            set({ user: null, isAuthenticated: false });
+            localStorage.removeItem('token');
+            set({ user: null, isAuthenticated: false, isLoading: false });
         }
     },
 }));

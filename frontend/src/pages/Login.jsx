@@ -11,7 +11,7 @@ import {
   Container,
 } from "@chakra-ui/react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 
 function Login() {
@@ -21,14 +21,17 @@ function Login() {
     formState: { errors, isSubmitting },
   } = useForm();
   const login = useAuthStore((state) => state.login);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const navigate = useNavigate();
   const toast = useToast();
 
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
   const onSubmit = async (data) => {
     const success = await login(data.email, data.password);
-    if (success) {
-      navigate("/");
-    } else {
+    if (!success) {
       toast({
         title: "Login failed",
         description: "Please check your credentials and try again.",

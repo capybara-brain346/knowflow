@@ -232,18 +232,18 @@ class DocumentService:
             )
 
     async def list_documents(
-        self, status: Optional[str] = None, page: int = 1, page_size: int = 10
+        self, document_status: Optional[str] = None, page: int = 1, page_size: int = 10
     ) -> List[Document]:
-        query = self.db.query(Document)
+        query = self.db.query(Document).filter(Document.user_id == self.current_user.id)
 
-        if status:
+        if document_status:
             try:
-                doc_status = DocumentStatus(status)
+                doc_status = DocumentStatus(document_status)
                 query = query.filter(Document.status == doc_status)
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid status: {status}",
+                    detail=f"Invalid status: {document_status}",
                 )
 
         offset = (page - 1) * page_size
