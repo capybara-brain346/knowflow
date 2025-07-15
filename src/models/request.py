@@ -20,6 +20,9 @@ class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1)
     session_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
+    document_ids: Optional[List[str]] = Field(
+        default=None, description="List of document IDs to filter context from"
+    )
 
 
 # Session Models

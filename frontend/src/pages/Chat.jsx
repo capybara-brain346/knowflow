@@ -11,10 +11,13 @@ import {
   useToast,
   IconButton,
   HStack,
+  Badge,
+  Collapse,
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import useChatStore from "../store/chatStore";
-import { EditIcon, CheckIcon, CloseIcon } from "@chakra-ui/icons";
+import { EditIcon, CheckIcon, CloseIcon, InfoIcon } from "@chakra-ui/icons";
+import DocumentSelector from "../components/DocumentSelector";
 
 function Chat() {
   const {
@@ -26,12 +29,15 @@ function Chat() {
     sendMessage,
     deleteSession,
     renameSession,
+    selectedDocuments,
+    setSelectedDocuments,
   } = useChatStore();
   const messageInputRef = useRef();
   const chatContainerRef = useRef();
   const toast = useToast();
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [newTitle, setNewTitle] = useState("");
+  const [showContext, setShowContext] = useState({});
 
   useEffect(() => {
     fetchSessions();
@@ -105,6 +111,13 @@ function Chat() {
     }
   };
 
+  const toggleContext = (messageIndex) => {
+    setShowContext((prev) => ({
+      ...prev,
+      [messageIndex]: !prev[messageIndex],
+    }));
+  };
+
   return (
     <Container maxW="container.xl" h="calc(100vh - 80px)">
       <Grid templateColumns="250px 1fr" h="100%" gap={4}>
@@ -117,7 +130,9 @@ function Chat() {
               <Box
                 key={session.id}
                 p={3}
-                bg={currentSession?.id === session.id ? "blue.50" : "transparent"}
+                bg={
+                  currentSession?.id === session.id ? "blue.50" : "transparent"
+                }
                 borderRadius="md"
                 cursor="pointer"
                 onClick={() => setCurrentSession(session)}
@@ -193,26 +208,60 @@ function Chat() {
                 maxW="80%"
               >
                 <Text>{message.content}</Text>
+                {message.sender === "assistant" && message.context_used && (
+                  <Box mt={2}>
+                    <Button
+                      size="xs"
+                      rightIcon={<InfoIcon />}
+                      onClick={() => toggleContext(index)}
+                      variant="ghost"
+                    >
+                      Show Context
+                    </Button>
+                    <Collapse in={showContext[index]} animateOpacity>
+                      <Box mt={2} fontSize="sm" color="gray.600">
+                        {message.context_used.filtered_document_ids && (
+                          <Text fontWeight="medium" mb={1}>
+                            Documents Used:
+                            {message.context_used.filtered_document_ids.map(
+                              (id) => (
+                                <Badge key={id} ml={2} colorScheme="blue">
+                                  {id}
+                                </Badge>
+                              )
+                            )}
+                          </Text>
+                        )}
+                      </Box>
+                    </Collapse>
+                  </Box>
+                )}
               </Box>
             ))}
           </Box>
 
           <Box p={4} borderTop="1px" borderColor="gray.200">
             <form onSubmit={handleSendMessage}>
-              <Flex gap={2}>
-                <Input
-                  ref={messageInputRef}
-                  placeholder="Type your message..."
-                  disabled={!currentSession}
+              <VStack spacing={3}>
+                <DocumentSelector
+                  selectedDocs={selectedDocuments}
+                  onSelectionChange={setSelectedDocuments}
                 />
-                <Button
-                  type="submit"
-                  colorScheme="blue"
-                  disabled={!currentSession}
-                >
-                  Send
-                </Button>
-              </Flex>
+                <Flex gap={2} width="100%">
+                  <Input
+                    ref={messageInputRef}
+                    placeholder="Type your message..."
+                    disabled={!currentSession}
+                  />
+                  <Button
+                    type="submit"
+                    colorScheme="blue"
+                    disabled={!currentSession}
+                  >
+                    Send
+                  </Button>
+                </Flex>
+              </VStack>
             </form>
           </Box>
         </GridItem>

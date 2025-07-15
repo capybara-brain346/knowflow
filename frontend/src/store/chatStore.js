@@ -6,6 +6,11 @@ const useChatStore = create((set, get) => ({
     currentSession: null,
     isLoading: false,
     error: null,
+    selectedDocuments: [],
+
+    setSelectedDocuments: (documents) => {
+        set({ selectedDocuments: documents });
+    },
 
     fetchSessions: async () => {
         set({ isLoading: true });
@@ -59,10 +64,12 @@ const useChatStore = create((set, get) => ({
     },
 
     sendMessage: async (message, sessionId) => {
+        const { selectedDocuments } = get();
         try {
             const chatResponse = await client.post('/chat', {
                 query: message,
                 session_id: sessionId,
+                document_ids: selectedDocuments.length > 0 ? selectedDocuments : undefined,
             });
 
             set((state) => {
@@ -71,7 +78,11 @@ const useChatStore = create((set, get) => ({
                     messages: [
                         ...(state.currentSession?.messages || []),
                         { sender: 'user', content: message },
-                        { sender: 'assistant', content: chatResponse.data.message },
+                        {
+                            sender: 'assistant',
+                            content: chatResponse.data.message,
+                            context_used: chatResponse.data.context_used,
+                        },
                     ],
                 };
                 return {

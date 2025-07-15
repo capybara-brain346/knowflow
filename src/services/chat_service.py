@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import HTTPException
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
@@ -61,18 +61,23 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
-    def _get_vector_results(self, query: str, current_user_id: int) -> List[str]:
+    def _get_vector_results(
+        self, query: str, current_user_id: int, document_ids: Optional[List[str]] = None
+    ) -> List[str]:
         try:
             logger.debug(f"Starting vector search for user_id: {current_user_id}")
 
-            user_docs = (
-                self.db.query(Document)
-                .filter(
-                    Document.user_id == current_user_id,
-                    Document.status == DocumentStatus.INDEXED,
-                )
-                .all()
+            user_docs_query = self.db.query(Document).filter(
+                Document.user_id == current_user_id,
+                Document.status == DocumentStatus.INDEXED,
             )
+
+            if document_ids:
+                user_docs_query = user_docs_query.filter(
+                    Document.doc_id.in_(document_ids)
+                )
+
+            user_docs = user_docs_query.all()
 
             logger.debug(f"Found {len(user_docs)} indexed documents for user")
 
@@ -84,8 +89,12 @@ class ChatService:
                 self.db.query(DocumentChunk)
                 .join(Document, Document.id == DocumentChunk.document_id)
                 .filter(Document.user_id == current_user_id)
-                .all()
             )
+
+            if document_ids:
+                doc_chunks = doc_chunks.filter(Document.doc_id.in_(document_ids))
+
+            doc_chunks = doc_chunks.all()
 
             logger.debug(f"Found {len(doc_chunks)} chunks for user's documents")
 
@@ -110,8 +119,12 @@ class ChatService:
                             Document.user_id == current_user_id,
                             DocumentChunk.document_id == metadata.get("document_id"),
                         )
-                        .first()
                     )
+
+                    if document_ids:
+                        chunk_doc = chunk_doc.filter(Document.doc_id.in_(document_ids))
+
+                    chunk_doc = chunk_doc.first()
 
                     if chunk_doc:
                         results.append(doc.page_content)
@@ -168,7 +181,11 @@ class ChatService:
             )
 
     async def process_query(
-        self, query: str, session_id: str, current_user_id: int
+        self,
+        query: str,
+        session_id: str,
+        current_user_id: int,
+        document_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         try:
             if session_id:
@@ -186,7 +203,9 @@ class ChatService:
                         detail="Access denied to this chat session",
                     )
 
-            vector_results = self._get_vector_results(query, current_user_id)
+            vector_results = self._get_vector_results(
+                query, current_user_id, document_ids
+            )
             graph_results = self._get_graph_results(query)
 
             context = self._merge_results(vector_results, graph_results)
@@ -212,6 +231,7 @@ class ChatService:
                     "context": context,
                     "vector_results": vector_results,
                     "graph_results": graph_results,
+                    "filtered_document_ids": document_ids,
                 },
                 "session_id": session_id if session_id else None,
             }
