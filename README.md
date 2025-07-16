@@ -6,54 +6,123 @@ KnowFlow is a powerful hybrid Retrieval-Augmented Generation (RAG) system that c
 
 ## 🌟 Features
 
-- **Hybrid RAG + Knowledge Graph Architecture**
-
-  - Dense semantic embeddings via vector DB (PostgreSQL + pgvector)
-  - Structured graph traversal using Neo4j
-  - Multi-hop reasoning over connected concepts
-  - Explainable results through graph node tracing
-
 - **Advanced Document Processing**
 
-  - Intelligent document chunking and indexing
-  - Hierarchical document structure preservation
-  - Cross-document relationship mapping
-  - Support for multiple file formats
+  - Multi-format support (PDF, DOCX, CSV, TXT)
+  - Intelligent chunking with configurable size and overlap
+  - Parallel batch processing with S3 storage
+  - Document status tracking (PENDING, PROCESSING, INDEXED, FAILED)
+  - Secure per-user document isolation
+
+- **Hybrid RAG + Knowledge Graph Architecture**
+
+  - Dense semantic embeddings via Google Gemini + pgvector
+  - Structured knowledge extraction to Neo4j
+  - Multi-hop reasoning through graph relationships
+  - Automatic entity and relationship mapping
+  - Query decomposition for complex questions
 
 - **Smart Query Processing**
 
-  - Named Entity Recognition for query understanding
-  - Combined vector and graph-based retrieval
-  - Context-aware response generation
+  - Automatic query decomposition for complex questions
+  - Hybrid vector + graph-based retrieval
+  - Retrieval quality evaluation and improvement
+  - Context-aware response synthesis
   - Conversation memory with graph context
 
-- **Enterprise-Ready**
+- **Chat & Session Management**
+
+  - Persistent chat sessions with history
+  - Context-aware follow-up questions
+  - Session renaming and management
+  - Message tracking with context preservation
+  - Multi-user support with isolation
+
+- **Security & Authentication**
+
+  - JWT-based authentication
+  - Secure password hashing with bcrypt
   - Role-based access control
-  - Secure authentication
-  - API-first architecture
-  - Comprehensive monitoring
+  - Per-user data isolation
+  - Document access verification
+
+- **Storage & Infrastructure**
+  - S3-compatible object storage
+  - PostgreSQL for structured data
+  - Neo4j for graph relationships
+  - Concurrent file operations
+  - Efficient batch processing
 
 ## 🏗️ Architecture
 
 ```mermaid
 graph TD
-    A[Frontend React/Vite] -->|REST/gRPC| B[FastAPI Backend]
+    A[Frontend React/Vite] -->|REST API| B[FastAPI Backend]
     B --> C[PostgreSQL + pgvector]
     B --> D[Neo4j Graph DB]
-    B --> E[LLM API]
-    C -->|Vector Search| B
-    D -->|Graph Traversal| B
-    E -->|Text Generation| B
+    B --> E[Google Gemini API]
+    B --> F[S3 Storage]
+
+    subgraph Document Processing
+        G[Document Upload] --> H[Chunking]
+        H --> I[Vector Embedding]
+        H --> J[Knowledge Extraction]
+    end
+
+    subgraph Query Processing
+        K[User Query] --> L[Query Decomposition]
+        L --> M[Vector Search]
+        L --> N[Graph Traversal]
+        M --> O[Response Synthesis]
+        N --> O
+    end
+
+    C -->|Semantic Search| B
+    D -->|Knowledge Graph| B
+    F -->|Document Storage| B
+    E -->|Embeddings & Generation| B
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Docker Engine 24.0+
-- Docker Compose v2.0+
-- 16GB RAM minimum
-- 50GB free disk space
+- Python 3.8+
+- PostgreSQL 14+ with pgvector extension
+- Neo4j 5.0+
+- S3-compatible storage
+- Google Cloud API key for Gemini
+
+### Environment Variables
+
+```env
+# Database
+DATABASE_URL=postgresql://user:pass@localhost:5432/knowflow
+VECTOR_COLLECTION_NAME=document_embeddings
+
+# Neo4j
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=password
+
+# Google API
+GOOGLE_API_KEY=your_gemini_api_key
+GEMINI_MODEL_NAME=gemini-pro
+GEMINI_EMBEDDING_MODEL=embedding-001
+
+# AWS S3
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=knowflow-documents
+
+# App Settings
+SECRET_KEY=your_jwt_secret_key
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=100
+TOP_K_RESULTS=3
+```
 
 ### Development Setup
 
@@ -64,65 +133,64 @@ git clone https://github.com/yourusername/knowflow.git
 cd knowflow
 ```
 
-2. Create a `.env` file:
-
-```env
-POSTGRES_PASSWORD=secure_password
-POSTGRES_DB=knowflow
-POSTGRES_USER=knowflow
-NEO4J_PASSWORD=secure_password
-GROQ_API_KEY=your_groq_api_key
-APP_ENV=development
-LOG_LEVEL=INFO
-```
-
-3. Start the development environment:
+2. Install dependencies:
 
 ```bash
-docker compose -f docker/development/docker-compose.yml up -d
+pip install -r requirements.txt
 ```
 
-4. Access the services:
+3. Run migrations:
 
-- Frontend: http://localhost:3000
-- API Docs: http://localhost:8000/docs
-- Neo4j Browser: http://localhost:7474
-- Grafana: http://localhost:3000
+```bash
+alembic upgrade head
+```
 
-## 📚 Documentation
+4. Start the development server:
 
-- [API Documentation](docs/API.md)
-- [AI Architecture](docs/AI-ARCHITECTURE.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-- [Docker Setup](docs/DOCKER.md)
+```bash
+uvicorn src.main:app --reload
+```
 
-## 🛠️ Tech Stack
+## 📚 API Documentation
 
-- **Frontend**: React + Vite
-- **Backend**: FastAPI
-- **Vector Store**: PostgreSQL + pgvector
-- **Graph Database**: Neo4j
-- **LLM Integration**: Groq API
-- **Storage**: S3 / PostgreSQL
-- **Monitoring**: Grafana / Prometheus
+### Authentication
 
-## 🔒 Security
+- `POST /auth/register` - Register new user
+- `POST /auth/login` - Login and get JWT token
+- `GET /auth/me` - Get current user info
 
-- JWT-based authentication
-- Role-based access control
-- Secure password hashing
-- Rate limiting
-- Encrypted data at rest
-- Regular security audits
+### Documents
 
-## 📊 Monitoring & Analytics
+- `POST /documents/upload` - Upload multiple documents
+- `POST /documents/{doc_id}/index` - Index document content
+- `GET /documents` - List user documents
+- `GET /documents/{doc_id}` - Get document details
 
-- Request latency tracking
-- Endpoint usage metrics
-- Error rate monitoring
-- User engagement analytics
-- System health monitoring
-- LLM usage tracking
+### Chat
+
+- `POST /chat/query` - Process a new query
+- `POST /chat/sessions/{session_id}/messages` - Send follow-up message
+- `GET /chat/sessions` - List chat sessions
+- `PUT /chat/sessions/{session_id}/rename` - Rename session
+- `DELETE /chat/sessions/{session_id}` - Delete session
+
+## 🔒 Security Features
+
+- JWT-based authentication with expiration
+- Bcrypt password hashing
+- Per-user document isolation
+- Access control verification
+- Secure file storage paths
+- Input validation and sanitization
+
+## 📊 Monitoring & Logging
+
+- Structured logging with levels
+- Request/response tracking
+- Error handling and reporting
+- Performance metrics
+- Document processing status
+- Chat session analytics
 
 ## 🤝 Contributing
 
@@ -135,9 +203,3 @@ docker compose -f docker/development/docker-compose.yml up -d
 ## 📄 License
 
 This project is licensed under the terms of the LICENSE file included in the repository.
-
-## 🌐 Community & Support
-
-- [Issue Tracker](https://github.com/yourusername/knowflow/issues)
-- [Documentation](docs/)
-- [Project Roadmap](docs/PRD.md)
