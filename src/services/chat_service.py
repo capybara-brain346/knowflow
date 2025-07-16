@@ -1,14 +1,11 @@
+import json
 from typing import List, Dict, Any, Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
-from src.core.database import get_db
-from src.models.request import FollowUpChatRequest
-from src.models.response import FollowUpChatResponse
-from src.models.database import ChatSession
 from datetime import datetime, timezone
 from neo4j import GraphDatabase
 
@@ -17,11 +14,15 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.services.graph_service import GraphService
 from src.services.auth_service import AuthService
-from fastapi import status
 from src.models.database import Document
 from src.models.database import DocumentChunk
 from src.models.database import DocumentStatus
 from src.models.database import Message
+from src.core.database import get_db
+from src.models.request import FollowUpChatRequest
+from src.models.response import FollowUpChatResponse
+from src.models.database import ChatSession
+from src.utils.utils import clean_llm_response
 
 
 class ChatService:
@@ -65,24 +66,19 @@ class ChatService:
         self, query: str, current_user_id: int, document_ids: Optional[List[str]] = None
     ) -> List[str]:
         try:
-            logger.debug(f"Starting vector search for user_id: {current_user_id}")
-
             user_docs_query = self.db.query(Document).filter(
                 Document.user_id == current_user_id,
                 Document.status == DocumentStatus.INDEXED,
             )
-
             if document_ids:
                 user_docs_query = user_docs_query.filter(
                     Document.doc_id.in_(document_ids)
                 )
 
             user_docs = user_docs_query.all()
-
-            logger.debug(f"Found {len(user_docs)} indexed documents for user")
+            logger.info(f"Found {len(user_docs)} indexed documents for user")
 
             if not user_docs:
-                logger.info("No indexed documents found for user")
                 return []
 
             doc_chunks = (
@@ -90,50 +86,45 @@ class ChatService:
                 .join(Document, Document.id == DocumentChunk.document_id)
                 .filter(Document.user_id == current_user_id)
             )
-
             if document_ids:
                 doc_chunks = doc_chunks.filter(Document.doc_id.in_(document_ids))
 
             doc_chunks = doc_chunks.all()
-
-            logger.debug(f"Found {len(doc_chunks)} chunks for user's documents")
+            logger.info(f"Found {len(doc_chunks)} chunks for user's documents")
 
             if not doc_chunks:
-                logger.info("No document chunks found")
                 return []
 
-            docs = self.vector_store.similarity_search(query, k=settings.TOP_K_RESULTS)
+            docs = self.vector_store.similarity_search(
+                query,
+                k=settings.TOP_K_RESULTS,
+                filter={
+                    "user_id": current_user_id,
+                    **({"doc_id": {"$in": document_ids}} if document_ids else {}),
+                },
+            )
 
-            logger.debug(f"Vector search returned {len(docs)} results")
+            logger.info(f"Vector search returned {len(docs)} results")
 
             results = []
             for doc in docs:
-                try:
-                    metadata = doc.metadata
-                    logger.debug(f"Processing result metadata: {metadata}")
-
-                    chunk_doc = (
-                        self.db.query(Document)
-                        .join(DocumentChunk, Document.id == DocumentChunk.document_id)
-                        .filter(
-                            Document.user_id == current_user_id,
-                            DocumentChunk.document_id == metadata.get("document_id"),
-                        )
+                metadata = doc.metadata
+                chunk = (
+                    self.db.query(DocumentChunk)
+                    .join(Document, Document.id == DocumentChunk.document_id)
+                    .filter(
+                        Document.id == metadata["document_id"],
+                        DocumentChunk.chunk_index == metadata["chunk_index"],
                     )
+                    .first()
+                )
 
-                    if document_ids:
-                        chunk_doc = chunk_doc.filter(Document.doc_id.in_(document_ids))
+                if chunk:
+                    results.append(doc.page_content)
+                    logger.info(f"Added result from document {metadata['doc_id']}")
+                else:
+                    logger.warning(f"Chunk not found in DB for metadata: {metadata}")
 
-                    chunk_doc = chunk_doc.first()
-
-                    if chunk_doc:
-                        results.append(doc.page_content)
-                        logger.debug(f"Added result from document {chunk_doc.doc_id}")
-                except Exception as e:
-                    logger.warning(f"Error processing vector search result: {str(e)}")
-                    continue
-
-            logger.info(f"Found {len(results)} authorized results in vector store")
             return results
 
         except Exception as e:
@@ -204,7 +195,101 @@ class ChatService:
             return sub_questions
         except Exception as e:
             logger.error(f"Error decomposing query: {str(e)}", exc_info=True)
-            return [query]  # Fallback to original query if decomposition fails
+            return [query]
+
+    def _evaluate_retrieval_quality(
+        self,
+        query: str,
+        retrieved_chunks: List[str],
+    ) -> Dict[str, Any]:
+        try:
+            evaluation_prompt = f"""Evaluate the quality of retrieved context for the given query.
+            
+            Query: {query}
+            
+            Retrieved Context Chunks:
+            {retrieved_chunks}
+            
+            Analyze the retrieval quality and return a JSON object with the following structure:
+            {{
+                "chunk_scores": [
+                    {{"chunk": "chunk text", "relevance_score": 0-10, "reasoning": "why this score"}}
+                ],
+                "missing_aspects": ["list of query aspects not covered"],
+                "redundant_information": ["list of redundant content"],
+                "suggested_improvements": {{
+                    "additional_info_needed": ["list of missing information"],
+                    "alternative_search_terms": ["list of suggested search terms"]
+                }},
+                "overall_quality_score": 0-10,
+                "quality_summary": "brief evaluation summary"
+            }}
+            
+            Return ONLY valid JSON, no other text."""
+
+            messages = [
+                SystemMessage(
+                    content="You are a retrieval quality evaluation expert. You must return only valid JSON."
+                ),
+                HumanMessage(content=evaluation_prompt),
+            ]
+
+            evaluation = self.llm.invoke(messages)
+            cleaned_response = clean_llm_response(evaluation.content)
+
+            try:
+                evaluation_data = json.loads(cleaned_response)
+                evaluation_data["needs_improvement"] = (
+                    evaluation_data["overall_quality_score"] < 7
+                )
+                return evaluation_data
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"Failed to parse evaluation JSON: {str(e)}", exc_info=True
+                )
+                return {"overall_quality_score": 0, "needs_improvement": True}
+
+        except Exception as e:
+            logger.error(f"Error evaluating retrieval quality: {str(e)}", exc_info=True)
+            return {"overall_quality_score": 0, "needs_improvement": True}
+
+    def _improve_retrieval(
+        self,
+        query: str,
+        evaluation: Dict[str, Any],
+        current_user_id: int,
+        document_ids: Optional[List[str]] = None,
+    ) -> List[str]:
+        try:
+            if not evaluation.get("needs_improvement", False):
+                return []
+
+            alternative_queries = []
+
+            if "missing_aspects" in evaluation:
+                alternative_queries.extend(
+                    [f"{query} {aspect}" for aspect in evaluation["missing_aspects"]]
+                )
+
+            if "suggested_improvements" in evaluation:
+                if "alternative_search_terms" in evaluation["suggested_improvements"]:
+                    alternative_queries.extend(
+                        evaluation["suggested_improvements"]["alternative_search_terms"]
+                    )
+
+            additional_chunks = []
+            for alt_query in alternative_queries:
+                new_chunks = self._get_vector_results(
+                    alt_query,
+                    current_user_id,
+                    document_ids,
+                )
+                additional_chunks.extend(new_chunks)
+
+            return list(set(additional_chunks))
+        except Exception as e:
+            logger.error(f"Error improving retrieval: {str(e)}", exc_info=True)
+            return []
 
     async def _process_sub_query(
         self,
@@ -217,13 +302,27 @@ class ChatService:
                 query, current_user_id, document_ids
             )
             graph_results = self._get_graph_results(query)
+
+            evaluation = self._evaluate_retrieval_quality(query, vector_results)
+
+            if evaluation.get("needs_improvement", False):
+                additional_chunks = self._improve_retrieval(
+                    query, evaluation, current_user_id, document_ids
+                )
+                vector_results.extend(additional_chunks)
+
+                evaluation = self._evaluate_retrieval_quality(query, vector_results)
+
             context = self._merge_results(vector_results, graph_results)
 
             system_prompt = f"""Answer the question based on the following context.
                 If you cannot find the answer in the context, say so.
 
                 Context:
-                {context}"""
+                {context}
+                
+                Retrieval Quality Metrics:
+                {evaluation.get("quality_summary", "")}"""
 
             messages = [
                 SystemMessage(content=system_prompt),
@@ -238,6 +337,7 @@ class ChatService:
                     "context": context,
                     "vector_results": vector_results,
                     "graph_results": graph_results,
+                    "retrieval_evaluation": evaluation,
                 },
             }
         except Exception as e:

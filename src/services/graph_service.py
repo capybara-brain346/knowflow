@@ -8,6 +8,7 @@ from src.core.config import settings
 from src.models.graph import GraphKnowledge
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
+from src.utils.utils import clean_llm_response
 
 
 class GraphService:
@@ -101,13 +102,6 @@ class GraphService:
                 8. Return null for non-existent paths/properties
                 """
 
-    def _clean_llm_response(self, response: str) -> str:
-        response = response.strip()
-        if response.startswith("```"):
-            response = response.split("\n", 1)[-1]
-            response = response.rsplit("```", 1)[0]
-        return response.strip().replace("`", "")
-
     def _parse_knowledge_json(
         self, raw_response: str
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -130,7 +124,7 @@ class GraphService:
             ]
 
             raw_response = self.llm.invoke(messages).content.strip()
-            cleaned_response = self._clean_llm_response(raw_response)
+            cleaned_response = clean_llm_response(raw_response)
             print("Raw LLM Response:", cleaned_response)
 
             return self._parse_knowledge_json(cleaned_response)
@@ -222,7 +216,7 @@ class GraphService:
         ]
 
         cypher_query = self.llm.invoke(messages).content.strip()
-        cypher_query = self._clean_llm_response(cypher_query)
+        cypher_query = clean_llm_response(cypher_query)
 
         if not self._validate_cypher_query(cypher_query):
             raise ExternalServiceException(

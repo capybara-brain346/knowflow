@@ -16,7 +16,7 @@ class S3Service:
             region_name=settings.AWS_REGION,
         )
         self.bucket_name = settings.S3_BUCKET_NAME
-        self.max_workers = 5  # Limit concurrent uploads
+        self.max_workers = 5
 
     def _get_user_path(self, user_id: int) -> str:
         return f"users/{user_id}"

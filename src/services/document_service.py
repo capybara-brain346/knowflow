@@ -1,10 +1,18 @@
+import os
 from typing import List, Optional, Dict, Any
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime, timezone
-import PyPDF2
-from io import BytesIO
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    UnstructuredFileLoader,
+    CSVLoader,
+    TextLoader,
+    Docx2txtLoader,
+)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+import tempfile
 
 from src.core.database import get_db
 from src.models.database import Document, DocumentStatus, DocumentChunk, User
@@ -14,8 +22,6 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document as LangchainDocument
 from src.services.graph_service import GraphService
 
 
@@ -54,7 +60,6 @@ class DocumentService:
             )
 
             self.graph_service = GraphService()
-
             logger.info("DocumentService initialized successfully")
         except Exception as e:
             logger.error(
@@ -166,55 +171,71 @@ class DocumentService:
                 user_id=document.user_id, file_path=file_path
             )
 
-            if document.content_type == "text/plain":
-                content = file_data.decode("utf-8")
-            elif document.content_type == "application/pdf":
-                pdf_reader = PyPDF2.PdfReader(BytesIO(file_data))
-                content = "\n".join(page.extract_text() for page in pdf_reader.pages)
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Indexing not supported for file type: {document.content_type}",
-                )
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=self.SUPPORTED_MIMETYPES[document.content_type]
+            ) as temp_file:
+                temp_file.write(file_data)
+                temp_file_path = temp_file.name
 
             try:
-                self.graph_service.store_graph_knowledge(doc_id, content)
-                logger.info(
-                    f"Successfully stored graph knowledge for document {doc_id}"
+                loader = self._get_document_loader(
+                    temp_file_path, document.content_type
                 )
-            except Exception as e:
-                logger.error(
-                    f"Failed to store graph knowledge: {str(e)}", exc_info=True
-                )
+                docs = loader.load()
+                content = "\n".join(doc.page_content for doc in docs)
 
-            chunks = self.text_splitter.split_text(content)
-            for i, chunk_content in enumerate(chunks):
-                embedding = self.embeddings.embed_documents([chunk_content])[0]
+                try:
+                    self.graph_service.store_graph_knowledge(doc_id, content)
+                    logger.info(
+                        f"Successfully stored graph knowledge for document {doc_id}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to store graph knowledge: {str(e)}", exc_info=True
+                    )
 
-                chunk = DocumentChunk(
-                    document_id=document.id,
-                    chunk_index=i,
-                    content=chunk_content,
-                    chunk_metadata={"index": i},
-                    embedding_vector=embedding,
-                )
-                self.db.add(chunk)
+                chunks = self.text_splitter.split_text(content)
 
-                self.vector_store.add_texts(
-                    texts=[chunk_content],
-                    metadatas=[
+                embeddings = self.embeddings.embed_documents(chunks)
+
+                chunk_objects = []
+                vector_texts = []
+                vector_metadata = []
+
+                for i, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
+                    chunk = DocumentChunk(
+                        document_id=document.id,
+                        chunk_index=i,
+                        content=chunk_content,
+                        chunk_metadata={"index": i},
+                        embedding_vector=embedding,
+                    )
+                    chunk_objects.append(chunk)
+                    vector_texts.append(chunk_content)
+                    vector_metadata.append(
                         {
                             "document_id": document.id,
                             "doc_id": document.doc_id,
-                            "chunk_index": i,
                             "user_id": document.user_id,
+                            "chunk_index": i,
                         }
-                    ],
+                    )
+
+                self.db.bulk_save_objects(chunk_objects)
+                self.db.commit()
+
+                self.vector_store.add_texts(
+                    texts=vector_texts,
+                    metadatas=vector_metadata,
                 )
 
-            document.status = DocumentStatus.INDEXED
-            document.indexed_at = datetime.now(timezone.utc)
-            self.db.commit()
+                document.status = DocumentStatus.INDEXED
+                document.indexed_at = datetime.now(timezone.utc)
+                self.db.commit()
+
+            finally:
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
 
             return {
                 "doc_id": doc_id,
@@ -222,6 +243,7 @@ class DocumentService:
                 "message": "Document indexed successfully",
                 "chunks_count": len(chunks),
             }
+
         except Exception as e:
             document.status = DocumentStatus.FAILED
             document.error_message = str(e)
@@ -258,3 +280,30 @@ class DocumentService:
                 detail=f"Document {doc_id} not found",
             )
         return document
+
+    def _get_document_loader(self, file_path: str, content_type: str):
+        try:
+            if content_type == "application/pdf":
+                return PyPDFLoader(file_path)
+            elif content_type in [
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ]:
+                return Docx2txtLoader(file_path)
+            elif content_type in [
+                "text/csv",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ]:
+                return CSVLoader(file_path)
+            elif content_type == "text/plain":
+                return TextLoader(file_path)
+            else:
+                return UnstructuredFileLoader(file_path)
+        except Exception as e:
+            logger.error(f"Failed to initialize document loader: {str(e)}")
+            raise ExternalServiceException(
+                message=f"Failed to load document of type {content_type}",
+                service_name="DocumentLoader",
+                extra={"error": str(e)},
+            )
