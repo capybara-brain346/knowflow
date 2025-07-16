@@ -1,0 +1,27 @@
+[project]
+name = "knowflow"
+version = "0.1.0"
+description = "A Knowledge-Driven RAG System for Enterprise Q&A"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3>=1.39.3",
+    "fastapi[standard]>=0.115.14",
+    "langchain>=0.3.26",
+    "langchain-community>=0.3.27",
+    "langchain-google-genai>=2.1.6",
+    "langchain-groq>=0.3.5",
+    "langchain-postgres>=0.0.15",
+    "psycopg[binary]>=3.2.9",
+    "psycopg-pool>=3.2.1",
+    "pydantic-settings>=2.10.1",
+    "python-magic>=0.4.27",
+    "unstructured[all-docs]>=0.18.3",
+    "uvicorn>=0.35.0",
+    "psycopg2>=2.9.10",
+    "neo4j>=5.28.1",
+    "passlib>=1.7.4",
+    "python-jose>=3.5.0",
+    "bcrypt>=4.3.0",
+    "pypdf2>=3.0.1",
+]
