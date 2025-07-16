@@ -180,6 +180,115 @@ class ChatService:
                 extra={"error": str(e)},
             )
 
+    def _decompose_query(self, query: str) -> List[str]:
+        try:
+            logger.debug(f"Decomposing query: {query}")
+            messages = [
+                SystemMessage(
+                    content="""You are a query decomposition assistant. Break down complex queries into 2-3 simpler sub-questions.
+                Rules:
+                1. If the query is already simple, return it as a single question
+                2. Each sub-question should be self-contained
+                3. Maximum 3 sub-questions
+                4. Return only the sub-questions, nothing else"""
+                ),
+                HumanMessage(content=query),
+            ]
+
+            response = self.llm.invoke(messages)
+            sub_questions = [
+                q.strip() for q in response.content.split("\n") if q.strip()
+            ]
+
+            logger.info(f"Query decomposed into {len(sub_questions)} sub-questions")
+            return sub_questions
+        except Exception as e:
+            logger.error(f"Error decomposing query: {str(e)}", exc_info=True)
+            return [query]  # Fallback to original query if decomposition fails
+
+    async def _process_sub_query(
+        self,
+        query: str,
+        current_user_id: int,
+        document_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            vector_results = self._get_vector_results(
+                query, current_user_id, document_ids
+            )
+            graph_results = self._get_graph_results(query)
+            context = self._merge_results(vector_results, graph_results)
+
+            system_prompt = f"""Answer the question based on the following context.
+                If you cannot find the answer in the context, say so.
+
+                Context:
+                {context}"""
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=query),
+            ]
+
+            response = self.llm.invoke(messages)
+
+            return {
+                "message": response.content,
+                "context_used": {
+                    "context": context,
+                    "vector_results": vector_results,
+                    "graph_results": graph_results,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error processing sub-query: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to process sub-query",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
+    def _synthesize_responses(
+        self, original_query: str, sub_responses: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        try:
+            combined_contexts = "\n\n".join(
+                [f"Sub-question result:\n{r['message']}" for r in sub_responses]
+            )
+
+            messages = [
+                SystemMessage(
+                    content="""Synthesize a comprehensive response from the sub-question results.
+                The response should:
+                1. Flow naturally and be coherent
+                2. Address all aspects of the original question
+                3. Maintain technical accuracy
+                4. Be concise but complete"""
+                ),
+                HumanMessage(
+                    content=f"""Original question: {original_query}
+
+                Sub-question results:
+                {combined_contexts}"""
+                ),
+            ]
+
+            response = self.llm.invoke(messages)
+
+            all_contexts = {
+                "sub_responses": sub_responses,
+                "synthesized_response": response.content,
+            }
+
+            return {"message": response.content, "context_used": all_contexts}
+        except Exception as e:
+            logger.error(f"Error synthesizing responses: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to synthesize responses",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
     async def process_query(
         self,
         query: str,
@@ -188,57 +297,45 @@ class ChatService:
         document_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         try:
-            if session_id:
-                session = (
-                    self.db.query(ChatSession)
-                    .filter(
-                        ChatSession.id == session_id,
-                        ChatSession.user_id == current_user_id,
-                    )
-                    .first()
+            logger.info(f"Processing query with decomposition: {query[:50]}...")
+
+            sub_questions = self._decompose_query(query)
+
+            if len(sub_questions) == 1:
+                return await self._process_sub_query(
+                    query, current_user_id, document_ids
                 )
+
+            sub_responses = []
+            for sub_q in sub_questions:
+                response = await self._process_sub_query(
+                    sub_q, current_user_id, document_ids
+                )
+                sub_responses.append(response)
+
+            final_response = self._synthesize_responses(query, sub_responses)
+
+            if session_id:
+                session = self._get_session(session_id)
                 if not session:
+                    raise HTTPException(status_code=404, detail="Session not found")
+
+                if session.user_id != current_user_id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access denied to this chat session",
                     )
 
-            vector_results = self._get_vector_results(
-                query, current_user_id, document_ids
-            )
-            graph_results = self._get_graph_results(query)
-
-            context = self._merge_results(vector_results, graph_results)
-
-            logger.debug("Building prompt with merged context")
-            system_prompt = f"""You are a helpful AI assistant. Answer the user's question based on the following context.
-                The context includes both semantic search results and structured knowledge graph information.
-                If you cannot find the answer in the context, say so.
-
-                Context:
-                {context}"""
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=query),
-            ]
-
-            response = self.llm.invoke(messages)
-            logger.info("Successfully generated response")
-
             return {
-                "message": response.content,
-                "context_used": {
-                    "context": context,
-                    "vector_results": vector_results,
-                    "graph_results": graph_results,
-                    "filtered_document_ids": document_ids,
-                },
-                "session_id": session_id if session_id else None,
+                "message": final_response["message"],
+                "context_used": final_response["context_used"],
+                "session_id": session_id,
             }
+
         except Exception as e:
-            logger.error(f"Error processing chat query: {str(e)}", exc_info=True)
+            logger.error(f"Error in process_query: {str(e)}", exc_info=True)
             raise ExternalServiceException(
-                message="Failed to process chat query",
+                message="Failed to process query",
                 service_name="ChatService",
                 extra={"error": str(e)},
             )
