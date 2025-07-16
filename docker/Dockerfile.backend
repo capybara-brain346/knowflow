@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+
+ENV PATH="/root/.local/bin/:$PATH"
+
+COPY pyproject.toml uv.lock .python-version ./
+
+COPY src/ ./src/
+
+RUN uv sync --locked
+
+EXPOSE 8000
+
+CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
