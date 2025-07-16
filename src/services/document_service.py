@@ -11,6 +11,7 @@ from langchain_community.document_loaders import (
     CSVLoader,
     TextLoader,
     Docx2txtLoader,
+    PyMuPDFLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import tempfile
@@ -24,6 +25,7 @@ from src.core.logging import logger
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_postgres import PGVector
 from src.services.graph_service import GraphService
+from src.utils.utils import clean_whitespaes
 
 
 class DocumentService:
@@ -64,6 +66,10 @@ class DocumentService:
             self.text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=settings.CHUNK_SIZE,
                 chunk_overlap=settings.CHUNK_OVERLAP,
+                separators=["\n\n", "\n", " ", ""],
+                keep_separator=True,
+                is_separator_regex=False,
+                length_function=len,
             )
 
             self.graph_service = GraphService()
@@ -190,6 +196,7 @@ class DocumentService:
                 )
                 docs = loader.load()
                 content = "\n".join(doc.page_content for doc in docs)
+                content = clean_whitespaes(content)
 
                 try:
                     self.graph_service.store_graph_knowledge(doc_id, content)
@@ -294,7 +301,7 @@ class DocumentService:
     def _get_document_loader(self, file_path: str, content_type: str):
         try:
             if content_type == "application/pdf":
-                return PyPDFLoader(file_path)
+                return PyMuPDFLoader(file_path)
             elif content_type in [
                 "application/msword",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

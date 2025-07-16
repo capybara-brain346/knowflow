@@ -301,7 +301,8 @@ class ChatService:
             vector_results = self._get_vector_results(
                 query, current_user_id, document_ids
             )
-            graph_results = self._get_graph_results(query)
+            # graph_results = self._get_graph_results(query)
+            graph_results = ""
 
             evaluation = self._evaluate_retrieval_quality(query, vector_results)
 
@@ -315,14 +316,21 @@ class ChatService:
 
             context = self._merge_results(vector_results, graph_results)
 
-            system_prompt = f"""Answer the question based on the following context.
-                If you cannot find the answer in the context, say so.
+            system_prompt = f"""
+            You are a helpful, reasoning assistant. Answer the user's question based primarily on the provided context. You are allowed to:
+            - Rephrase, summarize, or logically infer information from the context.
+            - Use reasoning to clarify or structure the answer when necessary.
 
-                Context:
-                {context}
-                
-                Retrieval Quality Metrics:
-                {evaluation.get("quality_summary", "")}"""
+            However:
+            - Do not fabricate facts not supported by the context.
+            - If the answer cannot reasonably be inferred from the context, reply: "The answer is not available in the provided context."
+
+            Context:
+            {context}
+
+            Retrieval Quality Summary:
+            {evaluation.get("quality_summary", "")}
+            """
 
             messages = [
                 SystemMessage(content=system_prompt),
