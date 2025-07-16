@@ -72,9 +72,9 @@ class Settings(BaseSettings):
     VECTOR_COLLECTION_NAME: str = Field(
         default="knowflow_vecotr_db", env="VECTOR_COLLECTION_NAME"
     )
-    CHUNK_SIZE: int = Field(default=1000)
-    CHUNK_OVERLAP: int = Field(default=200)
-    TOP_K_RESULTS: int = Field(default=3)
+    CHUNK_SIZE: int = Field(default=700)
+    CHUNK_OVERLAP: int = Field(default=80)
+    TOP_K_RESULTS: int = Field(default=5)
 
     # Graph Store
     GRAPH_BATCH_SIZE: int = Field(default=100)
@@ -82,8 +82,8 @@ class Settings(BaseSettings):
     GRAPH_MAX_RELATIONSHIPS: int = Field(default=5000)
 
     # Rate Limiting
-    RATE_LIMIT_CALLS: int = Field(env="RATE_LIMIT_CALLS")
-    RATE_LIMIT_PERIOD: int = Field(env="RATE_LIMIT_PERIOD")
+    RATE_LIMIT_CALLS: int = Field(default=100, env="RATE_LIMIT_CALLS")
+    RATE_LIMIT_PERIOD: int = Field(default=60, env="RATE_LIMIT_PERIOD")
     RATE_LIMIT_EXCLUDED_PATHS: set[str] = Field(default={"/health", "/health/detailed"})
 
     CORS_ORIGINS: List[str] = Field(

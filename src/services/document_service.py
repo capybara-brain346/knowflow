@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import List, Optional, Dict, Any
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
@@ -43,6 +44,12 @@ class DocumentService:
         self.storage_service = S3Service()
         self.current_user = current_user
         try:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
             self.embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.GEMINI_EMBEDDING_MODEL,
                 google_api_key=settings.GOOGLE_API_KEY,
@@ -196,7 +203,10 @@ class DocumentService:
 
                 chunks = self.text_splitter.split_text(content)
 
-                embeddings = self.embeddings.embed_documents(chunks)
+                loop = asyncio.get_event_loop()
+                embeddings = await loop.run_in_executor(
+                    None, self.embeddings.embed_documents, chunks
+                )
 
                 chunk_objects = []
                 vector_texts = []
