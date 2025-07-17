@@ -14,6 +14,9 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.services.graph_service import GraphService
 from src.services.auth_service import AuthService
+from src.services.chat.base_service import BaseLLMService
+from src.services.chat.query_decomposition import QueryDecompositionService
+from src.services.chat.retrieval_evaluation import RetrievalEvaluationService
 from src.models.database import Document
 from src.models.database import DocumentChunk
 from src.models.database import DocumentStatus
@@ -25,11 +28,13 @@ from src.models.database import ChatSession
 from src.utils.utils import clean_llm_response
 
 
-class ChatService:
+class ChatService(BaseLLMService):
     def __init__(self, db: Session = None):
-        self.db = db or next(get_db())
-        self.auth_service = AuthService(self.db)
+        super().__init__("ChatService")
         try:
+            self.db = db or next(get_db())
+            self.auth_service = AuthService(self.db)
+
             self.embeddings = GoogleGenerativeAIEmbeddings(
                 model=settings.GEMINI_EMBEDDING_MODEL,
                 google_api_key=settings.GOOGLE_API_KEY,
@@ -41,358 +46,22 @@ class ChatService:
                 collection_name=settings.VECTOR_COLLECTION_NAME,
             )
 
-            self.llm = ChatGoogleGenerativeAI(
-                google_api_key=settings.GOOGLE_API_KEY,
-                model=settings.GEMINI_MODEL_NAME,
-                convert_system_message_to_human=True,
-            )
-
             self.driver = GraphDatabase.driver(
                 settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
             )
 
             self.graph_service = GraphService()
+            self.query_decomposition_service = QueryDecompositionService()
+            self.retrieval_evaluation_service = RetrievalEvaluationService()
 
-            logger.info("ChatService initialized successfully")
+            logger.info("ChatService dependencies initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize ChatService: {str(e)}", exc_info=True)
+            logger.error(
+                f"Failed to initialize ChatService dependencies: {str(e)}",
+                exc_info=True,
+            )
             raise ExternalServiceException(
-                message="Failed to initialize chat service",
-                service_name="ChatService",
-                extra={"error": str(e)},
-            )
-
-    def _get_vector_results(
-        self, query: str, current_user_id: int, document_ids: Optional[List[str]] = None
-    ) -> List[str]:
-        try:
-            user_docs_query = self.db.query(Document).filter(
-                Document.user_id == current_user_id,
-                Document.status == DocumentStatus.INDEXED,
-            )
-            if document_ids:
-                user_docs_query = user_docs_query.filter(
-                    Document.doc_id.in_(document_ids)
-                )
-
-            user_docs = user_docs_query.all()
-            logger.info(f"Found {len(user_docs)} indexed documents for user")
-
-            if not user_docs:
-                return []
-
-            doc_chunks = (
-                self.db.query(DocumentChunk)
-                .join(Document, Document.id == DocumentChunk.document_id)
-                .filter(Document.user_id == current_user_id)
-            )
-            if document_ids:
-                doc_chunks = doc_chunks.filter(Document.doc_id.in_(document_ids))
-
-            doc_chunks = doc_chunks.all()
-            logger.info(f"Found {len(doc_chunks)} chunks for user's documents")
-
-            if not doc_chunks:
-                return []
-
-            docs = self.vector_store.similarity_search(
-                query,
-                k=settings.TOP_K_RESULTS,
-                filter={
-                    "user_id": current_user_id,
-                    **({"doc_id": {"$in": document_ids}} if document_ids else {}),
-                },
-            )
-
-            logger.info(f"Vector search returned {len(docs)} results")
-
-            results = []
-            for doc in docs:
-                metadata = doc.metadata
-                chunk = (
-                    self.db.query(DocumentChunk)
-                    .join(Document, Document.id == DocumentChunk.document_id)
-                    .filter(
-                        Document.id == metadata["document_id"],
-                        DocumentChunk.chunk_index == metadata["chunk_index"],
-                    )
-                    .first()
-                )
-
-                if chunk:
-                    results.append(doc.page_content)
-                    logger.info(f"Added result from document {metadata['doc_id']}")
-                else:
-                    logger.warning(f"Chunk not found in DB for metadata: {metadata}")
-
-            return results
-
-        except Exception as e:
-            logger.error(f"Error searching vector store: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to search vector store",
-                service_name="VectorStore",
-                extra={"error": str(e)},
-            )
-
-    def _get_graph_results(self, query: str) -> List[Dict[str, Any]]:
-        try:
-            logger.debug("Querying graph database")
-            results = self.graph_service.query_graph(query)
-            logger.info(f"Found {len(results)} relevant results in graph")
-            return results
-        except Exception as e:
-            logger.error(f"Error querying graph: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to query graph",
-                service_name="GraphService",
-                extra={"error": str(e)},
-            )
-
-    def _merge_results(
-        self, vector_results: List[str], graph_results: List[Dict[str, Any]]
-    ) -> str:
-        try:
-            graph_texts = []
-            for result in graph_results:
-                text = f"Type: {result.get('type', 'Unknown')}\n"
-                text += f"Properties: {', '.join([f'{k}: {v}' for k, v in result.get('properties', {}).items()])}\n"
-                if "relationships" in result:
-                    text += f"Relationships: {', '.join([r['type'] for r in result['relationships']])}"
-                graph_texts.append(text)
-
-            all_texts = vector_results[:3] + graph_texts[:3]
-            return "\n\n".join(all_texts)
-        except Exception as e:
-            logger.error(f"Error merging results: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to merge results",
-                service_name="ChatService",
-                extra={"error": str(e)},
-            )
-
-    def _decompose_query(self, query: str) -> List[str]:
-        try:
-            logger.debug(f"Decomposing query: {query}")
-            messages = [
-                SystemMessage(
-                    content="""You are a query decomposition assistant. Break down complex queries into 2-3 simpler sub-questions.
-                Rules:
-                1. If the query is already simple, return it as a single question
-                2. Each sub-question should be self-contained
-                3. Maximum 3 sub-questions
-                4. Return only the sub-questions, nothing else"""
-                ),
-                HumanMessage(content=query),
-            ]
-
-            response = self.llm.invoke(messages)
-            sub_questions = [
-                q.strip() for q in response.content.split("\n") if q.strip()
-            ]
-
-            logger.info(f"Query decomposed into {len(sub_questions)} sub-questions")
-            return sub_questions
-        except Exception as e:
-            logger.error(f"Error decomposing query: {str(e)}", exc_info=True)
-            return [query]
-
-    def _evaluate_retrieval_quality(
-        self,
-        query: str,
-        retrieved_chunks: List[str],
-    ) -> Dict[str, Any]:
-        try:
-            evaluation_prompt = f"""Evaluate the quality of retrieved context for the given query.
-            
-            Query: {query}
-            
-            Retrieved Context Chunks:
-            {retrieved_chunks}
-            
-            Analyze the retrieval quality and return a JSON object with the following structure:
-            {{
-                "chunk_scores": [
-                    {{"chunk": "chunk text", "relevance_score": 0-10, "reasoning": "why this score"}}
-                ],
-                "missing_aspects": ["list of query aspects not covered"],
-                "redundant_information": ["list of redundant content"],
-                "suggested_improvements": {{
-                    "additional_info_needed": ["list of missing information"],
-                    "alternative_search_terms": ["list of suggested search terms"]
-                }},
-                "overall_quality_score": 0-10,
-                "quality_summary": "brief evaluation summary"
-            }}
-            
-            Return ONLY valid JSON, no other text."""
-
-            messages = [
-                SystemMessage(
-                    content="You are a retrieval quality evaluation expert. You must return only valid JSON."
-                ),
-                HumanMessage(content=evaluation_prompt),
-            ]
-
-            evaluation = self.llm.invoke(messages)
-            cleaned_response = clean_llm_response(evaluation.content)
-
-            try:
-                evaluation_data = json.loads(cleaned_response)
-                evaluation_data["needs_improvement"] = (
-                    evaluation_data["overall_quality_score"] < 7
-                )
-                return evaluation_data
-            except json.JSONDecodeError as e:
-                logger.error(
-                    f"Failed to parse evaluation JSON: {str(e)}", exc_info=True
-                )
-                return {"overall_quality_score": 0, "needs_improvement": True}
-
-        except Exception as e:
-            logger.error(f"Error evaluating retrieval quality: {str(e)}", exc_info=True)
-            return {"overall_quality_score": 0, "needs_improvement": True}
-
-    def _improve_retrieval(
-        self,
-        query: str,
-        evaluation: Dict[str, Any],
-        current_user_id: int,
-        document_ids: Optional[List[str]] = None,
-    ) -> List[str]:
-        try:
-            if not evaluation.get("needs_improvement", False):
-                return []
-
-            alternative_queries = []
-
-            if "missing_aspects" in evaluation:
-                alternative_queries.extend(
-                    [f"{query} {aspect}" for aspect in evaluation["missing_aspects"]]
-                )
-
-            if "suggested_improvements" in evaluation:
-                if "alternative_search_terms" in evaluation["suggested_improvements"]:
-                    alternative_queries.extend(
-                        evaluation["suggested_improvements"]["alternative_search_terms"]
-                    )
-
-            additional_chunks = []
-            for alt_query in alternative_queries:
-                new_chunks = self._get_vector_results(
-                    alt_query,
-                    current_user_id,
-                    document_ids,
-                )
-                additional_chunks.extend(new_chunks)
-
-            return list(set(additional_chunks))
-        except Exception as e:
-            logger.error(f"Error improving retrieval: {str(e)}", exc_info=True)
-            return []
-
-    async def _process_sub_query(
-        self,
-        query: str,
-        current_user_id: int,
-        document_ids: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        try:
-            vector_results = self._get_vector_results(
-                query, current_user_id, document_ids
-            )
-            # graph_results = self._get_graph_results(query)
-            graph_results = ""
-
-            evaluation = self._evaluate_retrieval_quality(query, vector_results)
-
-            if evaluation.get("needs_improvement", False):
-                additional_chunks = self._improve_retrieval(
-                    query, evaluation, current_user_id, document_ids
-                )
-                vector_results.extend(additional_chunks)
-
-                evaluation = self._evaluate_retrieval_quality(query, vector_results)
-
-            context = self._merge_results(vector_results, graph_results)
-
-            system_prompt = f"""
-            You are a helpful, reasoning assistant. Answer the user's question based primarily on the provided context. You are allowed to:
-            - Rephrase, summarize, or logically infer information from the context.
-            - Use reasoning to clarify or structure the answer when necessary.
-
-            However:
-            - Do not fabricate facts not supported by the context.
-            - If the answer cannot reasonably be inferred from the context, reply: "The answer is not available in the provided context."
-
-            Context:
-            {context}
-
-            Retrieval Quality Summary:
-            {evaluation.get("quality_summary", "")}
-            """
-
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=query),
-            ]
-
-            response = self.llm.invoke(messages)
-
-            return {
-                "message": response.content,
-                "context_used": {
-                    "context": context,
-                    "vector_results": vector_results,
-                    "graph_results": graph_results,
-                    "retrieval_evaluation": evaluation,
-                },
-            }
-        except Exception as e:
-            logger.error(f"Error processing sub-query: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to process sub-query",
-                service_name="ChatService",
-                extra={"error": str(e)},
-            )
-
-    def _synthesize_responses(
-        self, original_query: str, sub_responses: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        try:
-            combined_contexts = "\n\n".join(
-                [f"Sub-question result:\n{r['message']}" for r in sub_responses]
-            )
-
-            messages = [
-                SystemMessage(
-                    content="""Synthesize a comprehensive response from the sub-question results.
-                The response should:
-                1. Flow naturally and be coherent
-                2. Address all aspects of the original question
-                3. Maintain technical accuracy
-                4. Be concise but complete"""
-                ),
-                HumanMessage(
-                    content=f"""Original question: {original_query}
-
-                Sub-question results:
-                {combined_contexts}"""
-                ),
-            ]
-
-            response = self.llm.invoke(messages)
-
-            all_contexts = {
-                "sub_responses": sub_responses,
-                "synthesized_response": response.content,
-            }
-
-            return {"message": response.content, "context_used": all_contexts}
-        except Exception as e:
-            logger.error(f"Error synthesizing responses: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to synthesize responses",
+                message="Failed to initialize chat service dependencies",
                 service_name="ChatService",
                 extra={"error": str(e)},
             )
@@ -407,7 +76,7 @@ class ChatService:
         try:
             logger.info(f"Processing query with decomposition: {query[:50]}...")
 
-            sub_questions = self._decompose_query(query)
+            sub_questions = self.query_decomposition_service.decompose_query(query)
 
             if len(sub_questions) == 1:
                 return await self._process_sub_query(
@@ -541,6 +210,237 @@ class ChatService:
             logger.error(f"Error deleting chat session: {str(e)}", exc_info=True)
             raise ExternalServiceException(
                 message="Failed to delete chat session",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
+    def _get_vector_results(
+        self, query: str, current_user_id: int, document_ids: Optional[List[str]] = None
+    ) -> List[str]:
+        try:
+            user_docs_query = self.db.query(Document).filter(
+                Document.user_id == current_user_id,
+                Document.status == DocumentStatus.INDEXED,
+            )
+            if document_ids:
+                user_docs_query = user_docs_query.filter(
+                    Document.doc_id.in_(document_ids)
+                )
+
+            user_docs = user_docs_query.all()
+            logger.info(f"Found {len(user_docs)} indexed documents for user")
+
+            if not user_docs:
+                return []
+
+            doc_chunks = (
+                self.db.query(DocumentChunk)
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .filter(Document.user_id == current_user_id)
+            )
+            if document_ids:
+                doc_chunks = doc_chunks.filter(Document.doc_id.in_(document_ids))
+
+            doc_chunks = doc_chunks.all()
+            logger.info(f"Found {len(doc_chunks)} chunks for user's documents")
+
+            if not doc_chunks:
+                return []
+
+            docs = self.vector_store.similarity_search(
+                query,
+                k=settings.TOP_K_RESULTS,
+                filter={
+                    "user_id": current_user_id,
+                    **({"doc_id": {"$in": document_ids}} if document_ids else {}),
+                },
+            )
+
+            logger.info(f"Vector search returned {len(docs)} results")
+
+            results = []
+            for doc in docs:
+                metadata = doc.metadata
+                chunk = (
+                    self.db.query(DocumentChunk)
+                    .join(Document, Document.id == DocumentChunk.document_id)
+                    .filter(
+                        Document.id == metadata["document_id"],
+                        DocumentChunk.chunk_index == metadata["chunk_index"],
+                    )
+                    .first()
+                )
+
+                if chunk:
+                    results.append(doc.page_content)
+                    logger.info(f"Added result from document {metadata['doc_id']}")
+                else:
+                    logger.warning(f"Chunk not found in DB for metadata: {metadata}")
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Error searching vector store: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to search vector store",
+                service_name="VectorStore",
+                extra={"error": str(e)},
+            )
+
+    def _get_graph_results(self, query: str) -> List[Dict[str, Any]]:
+        try:
+            logger.debug("Querying graph database")
+            results = self.graph_service.query_graph(query)
+            logger.info(f"Found {len(results)} relevant results in graph")
+            return results
+        except Exception as e:
+            logger.error(f"Error querying graph: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to query graph",
+                service_name="GraphService",
+                extra={"error": str(e)},
+            )
+
+    def _merge_results(
+        self, vector_results: List[str], graph_results: List[Dict[str, Any]]
+    ) -> str:
+        try:
+            graph_texts = []
+            for result in graph_results:
+                text = f"Type: {result.get('type', 'Unknown')}\n"
+                text += f"Properties: {', '.join([f'{k}: {v}' for k, v in result.get('properties', {}).items()])}\n"
+                if "relationships" in result:
+                    text += f"Relationships: {', '.join([r['type'] for r in result['relationships']])}"
+                graph_texts.append(text)
+
+            all_texts = vector_results[:3] + graph_texts[:3]
+            return "\n\n".join(all_texts)
+        except Exception as e:
+            logger.error(f"Error merging results: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to merge results",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
+    async def _process_sub_query(
+        self,
+        query: str,
+        current_user_id: int,
+        document_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            vector_results = self._get_vector_results(
+                query, current_user_id, document_ids
+            )
+            graph_results = self._get_graph_results(query)
+
+            evaluation = self.retrieval_evaluation_service.evaluate_retrieval_quality(
+                query, vector_results
+            )
+
+            attempt, max_attempts = (
+                0,
+                2,
+            )  # IMP: max attempts to stop _improve_retrieval() to into infinite loop
+
+            while evaluation.get("needs_improvement", False) and attempt < max_attempts:
+                alternative_queries = (
+                    self.retrieval_evaluation_service.improve_retrieval(
+                        query, evaluation
+                    )
+                )
+                for alt_query in alternative_queries:
+                    additional_chunks = self._get_vector_results(
+                        alt_query, current_user_id, document_ids
+                    )
+                    vector_results.extend(additional_chunks)
+                evaluation = (
+                    self.retrieval_evaluation_service.evaluate_retrieval_quality(
+                        query, vector_results
+                    )
+                )
+                attempt += 1
+
+            context = self._merge_results(vector_results, graph_results)
+
+            system_prompt = f"""
+            You are a helpful, reasoning assistant. Answer the user's question based primarily on the provided context. You are allowed to:
+            - Rephrase, summarize, or logically infer information from the context.
+            - Use reasoning to clarify or structure the answer when necessary.
+
+            However:
+            - Do not fabricate facts not supported by the context.
+            - If the answer cannot reasonably be inferred from the context, reply: "The answer is not available in the provided context."
+
+            Context:
+            {context}
+
+            Retrieval Quality Summary:
+            {evaluation.get("quality_summary", "")}
+            """
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=query),
+            ]
+
+            response = self.llm.invoke(messages)
+
+            return {
+                "message": response.content,
+                "context_used": {
+                    "context": context,
+                    "vector_results": vector_results,
+                    "graph_results": graph_results,
+                    "retrieval_evaluation": evaluation,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error processing sub-query: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to process sub-query",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
+    def _synthesize_responses(
+        self, original_query: str, sub_responses: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        try:
+            combined_contexts = "\n\n".join(
+                [f"Sub-question result:\n{r['message']}" for r in sub_responses]
+            )
+
+            messages = [
+                SystemMessage(
+                    content="""Synthesize a comprehensive response from the sub-question results.
+                The response should:
+                1. Flow naturally and be coherent
+                2. Address all aspects of the original question
+                3. Maintain technical accuracy
+                4. Be concise but complete"""
+                ),
+                HumanMessage(
+                    content=f"""Original question: {original_query}
+
+                Sub-question results:
+                {combined_contexts}"""
+                ),
+            ]
+
+            response = self.llm.invoke(messages)
+
+            all_contexts = {
+                "sub_responses": sub_responses,
+                "synthesized_response": response.content,
+            }
+
+            return {"message": response.content, "context_used": all_contexts}
+        except Exception as e:
+            logger.error(f"Error synthesizing responses: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to synthesize responses",
                 service_name="ChatService",
                 extra={"error": str(e)},
             )
