@@ -23,6 +23,12 @@ class ChatRequest(BaseModel):
     document_ids: Optional[List[str]] = Field(
         default=None, description="List of document IDs to filter context from"
     )
+    use_query_decomposition: bool = Field(
+        default=True, description="Whether to use query decomposition feature"
+    )
+    use_retrieval_evaluation: bool = Field(
+        default=True, description="Whether to use retrieval evaluation feature"
+    )
 
 
 # Session Models

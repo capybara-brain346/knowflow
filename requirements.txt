@@ -440,6 +440,8 @@ pydantic-settings==2.10.1
     #   langchain-community
 pygments==2.19.2
     # via rich
+pymupdf==1.26.3
+    # via knowflow (pyproject.toml)
 pypandoc==1.15
     # via unstructured
 pyparsing==3.2.3

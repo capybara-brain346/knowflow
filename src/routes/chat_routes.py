@@ -37,6 +37,8 @@ async def chat(
             session_id=request.session_id,
             current_user_id=current_user.id,
             document_ids=request.document_ids,
+            use_query_decomposition=request.use_query_decomposition,
+            use_retrieval_evaluation=request.use_retrieval_evaluation,
         )
 
         if request.session_id:

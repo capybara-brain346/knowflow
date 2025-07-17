@@ -51,10 +51,11 @@ class ChatService(BaseLLMService):
             )
 
             self.graph_service = GraphService()
-            self.query_decomposition_service = QueryDecompositionService()
-            self.retrieval_evaluation_service = RetrievalEvaluationService()
 
-            logger.info("ChatService dependencies initialized successfully")
+            self._query_decomposition_service = None
+            self._retrieval_evaluation_service = None
+
+            logger.info("ChatService core dependencies initialized successfully")
         except Exception as e:
             logger.error(
                 f"Failed to initialize ChatService dependencies: {str(e)}",
@@ -66,48 +67,43 @@ class ChatService(BaseLLMService):
                 extra={"error": str(e)},
             )
 
+    @property
+    def query_decomposition_service(self):
+        if self._query_decomposition_service is None:
+            self._query_decomposition_service = QueryDecompositionService()
+        return self._query_decomposition_service
+
+    @property
+    def retrieval_evaluation_service(self):
+        if self._retrieval_evaluation_service is None:
+            self._retrieval_evaluation_service = RetrievalEvaluationService()
+        return self._retrieval_evaluation_service
+
     async def process_query(
         self,
         query: str,
         session_id: str,
         current_user_id: int,
         document_ids: Optional[List[str]] = None,
+        use_query_decomposition: bool = True,
+        use_retrieval_evaluation: bool = True,
     ) -> Dict[str, Any]:
         try:
-            logger.info(f"Processing query with decomposition: {query[:50]}...")
-
-            sub_questions = self.query_decomposition_service.decompose_query(query)
-
-            if len(sub_questions) == 1:
-                return await self._process_sub_query(
-                    query, current_user_id, document_ids
-                )
-
-            sub_responses = []
-            for sub_q in sub_questions:
-                response = await self._process_sub_query(
-                    sub_q, current_user_id, document_ids
-                )
-                sub_responses.append(response)
-
-            final_response = self._synthesize_responses(query, sub_responses)
-
-            if session_id:
-                session = self._get_session(session_id)
-                if not session:
-                    raise HTTPException(status_code=404, detail="Session not found")
-
-                if session.user_id != current_user_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Access denied to this chat session",
+            if use_query_decomposition:
+                sub_questions = self.query_decomposition_service.decompose_query(query)
+                if len(sub_questions) > 1:
+                    responses = await self._process_multiple_queries(
+                        sub_questions,
+                        current_user_id,
+                        document_ids,
+                        use_retrieval_evaluation,
                     )
+                    return self._synthesize_responses(query, responses)
 
-            return {
-                "message": final_response["message"],
-                "context_used": final_response["context_used"],
-                "session_id": session_id,
-            }
+            # Single query processing
+            return await self._process_single_query(
+                query, current_user_id, document_ids, use_retrieval_evaluation
+            )
 
         except Exception as e:
             logger.error(f"Error in process_query: {str(e)}", exc_info=True)
@@ -116,6 +112,111 @@ class ChatService(BaseLLMService):
                 service_name="ChatService",
                 extra={"error": str(e)},
             )
+
+    async def _process_multiple_queries(
+        self,
+        queries: List[str],
+        current_user_id: int,
+        document_ids: Optional[List[str]],
+        use_retrieval_evaluation: bool,
+    ) -> List[Dict[str, Any]]:
+        responses = []
+        for query in queries:
+            response = await self._process_single_query(
+                query, current_user_id, document_ids, use_retrieval_evaluation
+            )
+            responses.append(response)
+        return responses
+
+    async def _process_single_query(
+        self,
+        query: str,
+        current_user_id: int,
+        document_ids: Optional[List[str]],
+        use_retrieval_evaluation: bool,
+    ) -> Dict[str, Any]:
+        try:
+            vector_results = self._get_vector_results(
+                query, current_user_id, document_ids
+            )
+            graph_results = self._get_graph_results(query)
+
+            if use_retrieval_evaluation:
+                vector_results = await self._apply_retrieval_evaluation(
+                    query, vector_results, current_user_id, document_ids
+                )
+
+            context = self._merge_results(vector_results, graph_results)
+            response = await self._generate_llm_response(query, context)
+
+            return {
+                "message": response,
+                "context_used": {
+                    "vector_results": vector_results,
+                    "graph_results": graph_results,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing query: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to process query",
+                service_name="ChatService",
+                extra={"error": str(e)},
+            )
+
+    async def _apply_retrieval_evaluation(
+        self,
+        query: str,
+        initial_results: List[str],
+        current_user_id: int,
+        document_ids: Optional[List[str]],
+    ) -> List[str]:
+        results = initial_results.copy()
+        evaluation = self.retrieval_evaluation_service.evaluate_retrieval_quality(
+            query, results
+        )
+
+        attempt = 0
+        while evaluation.get("needs_improvement", False) and attempt < 2:
+            alternative_queries = self.retrieval_evaluation_service._improve_retrieval(
+                query, evaluation
+            )
+            for alt_query in alternative_queries:
+                additional_results = self._get_vector_results(
+                    alt_query, current_user_id, document_ids
+                )
+                results.extend(additional_results)
+
+            evaluation = self.retrieval_evaluation_service.evaluate_retrieval_quality(
+                query, results
+            )
+            attempt += 1
+
+        return results
+
+    async def _generate_llm_response(self, query: str, context: str) -> str:
+        """Generate LLM response with given context"""
+        system_prompt = f"""
+        You are a helpful, reasoning assistant. Answer the user's question based primarily on the provided context. You are allowed to:
+        - Rephrase, summarize, or logically infer information from the context.
+        - Use reasoning to clarify or structure the answer when necessary.
+
+        However:
+        - Do not fabricate facts not supported by the context.
+        - If the answer cannot reasonably be inferred from the context, reply: "The answer is not available in the provided context."
+
+        Context:
+        {context}
+        """
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=query),
+        ]
+
+        response = self.llm.invoke(messages)
+        return response.content
 
     async def follow_up_chat(
         self, session_id: str, request: FollowUpChatRequest, current_user_id: int
@@ -319,87 +420,6 @@ class ChatService(BaseLLMService):
             logger.error(f"Error merging results: {str(e)}", exc_info=True)
             raise ExternalServiceException(
                 message="Failed to merge results",
-                service_name="ChatService",
-                extra={"error": str(e)},
-            )
-
-    async def _process_sub_query(
-        self,
-        query: str,
-        current_user_id: int,
-        document_ids: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        try:
-            vector_results = self._get_vector_results(
-                query, current_user_id, document_ids
-            )
-            graph_results = self._get_graph_results(query)
-
-            evaluation = self.retrieval_evaluation_service.evaluate_retrieval_quality(
-                query, vector_results
-            )
-
-            attempt, max_attempts = (
-                0,
-                2,
-            )  # IMP: max attempts to stop _improve_retrieval() to into infinite loop
-
-            while evaluation.get("needs_improvement", False) and attempt < max_attempts:
-                alternative_queries = (
-                    self.retrieval_evaluation_service._improve_retrieval(
-                        query, evaluation
-                    )
-                )
-                for alt_query in alternative_queries:
-                    additional_chunks = self._get_vector_results(
-                        alt_query, current_user_id, document_ids
-                    )
-                    vector_results.extend(additional_chunks)
-                evaluation = (
-                    self.retrieval_evaluation_service.evaluate_retrieval_quality(
-                        query, vector_results
-                    )
-                )
-                attempt += 1
-
-            context = self._merge_results(vector_results, graph_results)
-
-            system_prompt = f"""
-            You are a helpful, reasoning assistant. Answer the user's question based primarily on the provided context. You are allowed to:
-            - Rephrase, summarize, or logically infer information from the context.
-            - Use reasoning to clarify or structure the answer when necessary.
-
-            However:
-            - Do not fabricate facts not supported by the context.
-            - If the answer cannot reasonably be inferred from the context, reply: "The answer is not available in the provided context."
-
-            Context:
-            {context}
-
-            Retrieval Quality Summary:
-            {evaluation.get("quality_summary", "")}
-            """
-
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=query),
-            ]
-
-            response = self.llm.invoke(messages)
-
-            return {
-                "message": response.content,
-                "context_used": {
-                    "context": context,
-                    "vector_results": vector_results,
-                    "graph_results": graph_results,
-                    "retrieval_evaluation": evaluation,
-                },
-            }
-        except Exception as e:
-            logger.error(f"Error processing sub-query: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to process sub-query",
                 service_name="ChatService",
                 extra={"error": str(e)},
             )
