@@ -2,7 +2,7 @@ from typing import List
 from langchain.schema import HumanMessage, SystemMessage
 
 from src.core.logging import logger
-from src.services.chat.base_service import BaseLLMService
+from src.services.base_service import BaseLLMService
 
 
 class QueryDecompositionService(BaseLLMService):

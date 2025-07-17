@@ -14,7 +14,7 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.services.graph_service import GraphService
 from src.services.auth_service import AuthService
-from src.services.chat.base_service import BaseLLMService
+from src.services.base_service import BaseLLMService
 from src.services.chat.query_decomposition import QueryDecompositionService
 from src.services.chat.retrieval_evaluation import RetrievalEvaluationService
 from src.models.database import Document
@@ -346,7 +346,7 @@ class ChatService(BaseLLMService):
 
             while evaluation.get("needs_improvement", False) and attempt < max_attempts:
                 alternative_queries = (
-                    self.retrieval_evaluation_service.improve_retrieval(
+                    self.retrieval_evaluation_service._improve_retrieval(
                         query, evaluation
                     )
                 )

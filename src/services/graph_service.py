@@ -1,7 +1,6 @@
 from typing import List, Dict, Any, Optional
 import json
 from neo4j import GraphDatabase, Session
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
 
 from src.core.config import settings
@@ -9,27 +8,24 @@ from src.models.graph import GraphKnowledge
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.utils.utils import clean_llm_response
+from src.services.base_service import BaseLLMService
 
 
-class GraphService:
+class GraphService(BaseLLMService):
     def __init__(self):
+        super().__init__("GraphService")
         try:
             self.driver = GraphDatabase.driver(
                 settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
             )
-
-            self.llm = ChatGoogleGenerativeAI(
-                google_api_key=settings.GOOGLE_API_KEY,
-                model=settings.GEMINI_MODEL_NAME,
-                convert_system_message_to_human=True,
-                max_output_tokens=10000,
-            )
-
-            logger.info("GraphService initialized successfully")
+            logger.info("GraphService connections initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize GraphService: {str(e)}", exc_info=True)
+            logger.error(
+                f"Failed to initialize GraphService connections: {str(e)}",
+                exc_info=True,
+            )
             raise ExternalServiceException(
-                message="Failed to initialize graph service",
+                message="Failed to initialize graph service connections",
                 service_name="GraphService",
                 extra={"error": str(e)},
             )
