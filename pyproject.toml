@@ -16,7 +16,6 @@ dependencies = [
     "psycopg-pool>=3.2.1",
     "pydantic-settings>=2.10.1",
     "python-magic>=0.4.27",
-    "unstructured[all-docs]>=0.18.3",
     "uvicorn>=0.35.0",
     "neo4j>=5.28.1",
     "passlib>=1.7.4",
@@ -27,4 +26,5 @@ dependencies = [
     "constructs>=10.4.2",
     "psycopg2-binary>=2.9.10",
     "pymupdf>=1.26.3",
+    "unstructured[pdf]>=0.18.3",
 ]
