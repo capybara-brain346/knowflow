@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import json
 from neo4j import GraphDatabase, Session
 from langchain.schema import HumanMessage, SystemMessage
@@ -26,6 +26,46 @@ class GraphService(BaseLLMService):
             )
             raise ExternalServiceException(
                 message="Failed to initialize graph service connections",
+                service_name="GraphService",
+                extra={"error": str(e)},
+            )
+
+    def store_graph_knowledge(self, doc_id: str, text: str) -> None:
+        try:
+            knowledge = self._extract_graph_knowledge(text)
+
+            with self.driver.session() as session:
+                self._create_document_node(session, doc_id)
+
+                for node in knowledge["nodes"]:
+                    self._create_knowledge_node(session, node, doc_id)
+
+                for rel in knowledge["relationships"]:
+                    self._create_relationship(session, rel)
+
+            logger.info(f"Successfully stored graph knowledge for doc_id: {doc_id}")
+        except Exception as e:
+            logger.error(f"Error storing graph knowledge: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to store graph knowledge",
+                service_name="GraphService",
+                extra={"error": str(e)},
+            )
+
+    def query_graph(self, query: str) -> List[Dict[str, Any]]:
+        try:
+            cypher_query = self._generate_cypher_query(query)
+            logger.debug(f"Generated Cypher query: {cypher_query}")
+
+            with self.driver.session() as session:
+                result = session.run(cypher_query)
+                records = [dict(record) for record in result]
+                logger.info(f"Found {len(records)} relevant results in graph")
+                return records
+        except Exception as e:
+            logger.error(f"Error querying graph: {str(e)}", exc_info=True)
+            raise ExternalServiceException(
+                message="Failed to query graph",
                 service_name="GraphService",
                 extra={"error": str(e)},
             )
@@ -170,28 +210,6 @@ class GraphService(BaseLLMService):
             properties=rel["properties"],
         )
 
-    def store_graph_knowledge(self, doc_id: str, text: str) -> None:
-        try:
-            knowledge = self._extract_graph_knowledge(text)
-
-            with self.driver.session() as session:
-                self._create_document_node(session, doc_id)
-
-                for node in knowledge["nodes"]:
-                    self._create_knowledge_node(session, node, doc_id)
-
-                for rel in knowledge["relationships"]:
-                    self._create_relationship(session, rel)
-
-            logger.info(f"Successfully stored graph knowledge for doc_id: {doc_id}")
-        except Exception as e:
-            logger.error(f"Error storing graph knowledge: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to store graph knowledge",
-                service_name="GraphService",
-                extra={"error": str(e)},
-            )
-
     def _validate_cypher_query(self, query: str) -> bool:
         valid_starts = [
             "MATCH",
@@ -222,21 +240,3 @@ class GraphService(BaseLLMService):
             )
 
         return cypher_query
-
-    def query_graph(self, query: str) -> List[Dict[str, Any]]:
-        try:
-            cypher_query = self._generate_cypher_query(query)
-            logger.debug(f"Generated Cypher query: {cypher_query}")
-
-            with self.driver.session() as session:
-                result = session.run(cypher_query)
-                records = [dict(record) for record in result]
-                logger.info(f"Found {len(records)} relevant results in graph")
-                return records
-        except Exception as e:
-            logger.error(f"Error querying graph: {str(e)}", exc_info=True)
-            raise ExternalServiceException(
-                message="Failed to query graph",
-                service_name="GraphService",
-                extra={"error": str(e)},
-            )

@@ -100,7 +100,6 @@ class ChatService(BaseLLMService):
                     )
                     return self._synthesize_responses(query, responses)
 
-            # Single query processing
             return await self._process_single_query(
                 query, current_user_id, document_ids, use_retrieval_evaluation
             )
@@ -319,65 +318,27 @@ class ChatService(BaseLLMService):
         self, query: str, current_user_id: int, document_ids: Optional[List[str]] = None
     ) -> List[str]:
         try:
-            user_docs_query = self.db.query(Document).filter(
-                Document.user_id == current_user_id,
-                Document.status == DocumentStatus.INDEXED,
-            )
+            filter_dict = {
+                "user_id": current_user_id,
+            }
             if document_ids:
-                user_docs_query = user_docs_query.filter(
-                    Document.doc_id.in_(document_ids)
-                )
+                filter_dict["doc_id"] = {"$in": document_ids}
 
-            user_docs = user_docs_query.all()
-            logger.info(f"Found {len(user_docs)} indexed documents for user")
+            query_embedding = self.embeddings.embed_query(query)
 
-            if not user_docs:
-                return []
-
-            doc_chunks = (
-                self.db.query(DocumentChunk)
-                .join(Document, Document.id == DocumentChunk.document_id)
-                .filter(Document.user_id == current_user_id)
-            )
-            if document_ids:
-                doc_chunks = doc_chunks.filter(Document.doc_id.in_(document_ids))
-
-            doc_chunks = doc_chunks.all()
-            logger.info(f"Found {len(doc_chunks)} chunks for user's documents")
-
-            if not doc_chunks:
-                return []
-
-            docs = self.vector_store.similarity_search(
-                query,
+            docs_and_scores = self.vector_store.similarity_search_with_score_by_vector(
+                embedding=query_embedding,
                 k=settings.TOP_K_RESULTS,
-                filter={
-                    "user_id": current_user_id,
-                    **({"doc_id": {"$in": document_ids}} if document_ids else {}),
-                },
+                filter=filter_dict,
             )
 
-            logger.info(f"Vector search returned {len(docs)} results")
+            results = [
+                doc.page_content
+                for doc, score in docs_and_scores
+                if score >= settings.SIMILARITY_THRESHOLD
+            ]
 
-            results = []
-            for doc in docs:
-                metadata = doc.metadata
-                chunk = (
-                    self.db.query(DocumentChunk)
-                    .join(Document, Document.id == DocumentChunk.document_id)
-                    .filter(
-                        Document.id == metadata["document_id"],
-                        DocumentChunk.chunk_index == metadata["chunk_index"],
-                    )
-                    .first()
-                )
-
-                if chunk:
-                    results.append(doc.page_content)
-                    logger.info(f"Added result from document {metadata['doc_id']}")
-                else:
-                    logger.warning(f"Chunk not found in DB for metadata: {metadata}")
-
+            logger.info(f"Vector search returned {len(results)} results with scores")
             return results
 
         except Exception as e:
