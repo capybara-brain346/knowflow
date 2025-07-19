@@ -332,13 +332,8 @@ class ChatService(BaseLLMService):
                 filter=filter_dict,
             )
 
-            results = [
-                doc.page_content
-                for doc, score in docs_and_scores
-                if score >= settings.SIMILARITY_THRESHOLD
-            ]
+            results = [doc.page_content for doc, score in docs_and_scores]
 
-            logger.info(f"Vector search returned {len(results)} results with scores")
             return results
 
         except Exception as e:

@@ -26,5 +26,4 @@ dependencies = [
     "constructs>=10.4.2",
     "psycopg2-binary>=2.9.10",
     "pymupdf>=1.26.3",
-    "unstructured[pdf]>=0.18.3",
 ]

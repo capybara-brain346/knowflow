@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime, timezone
 from langchain_community.document_loaders import (
+    PyMuPDFLoader,
     UnstructuredFileLoader,
     CSVLoader,
     TextLoader,
@@ -252,7 +253,7 @@ class DocumentService:
 
     def _create_temp_file(self, document: Document, file_data: bytes) -> str:
         with tempfile.NamedTemporaryFile(
-            delete=True, suffix=self.SUPPORTED_MIMETYPES[document.content_type]
+            delete=False, suffix=self.SUPPORTED_MIMETYPES[document.content_type]
         ) as temp_file:
             temp_file.write(file_data)
             return temp_file.name
@@ -325,7 +326,7 @@ class DocumentService:
     def _get_document_loader(self, file_path: str, content_type: str):
         try:
             if content_type == "application/pdf":
-                return UnstructuredFileLoader(file_path)
+                return PyMuPDFLoader(file_path)
             elif content_type in [
                 "application/msword",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

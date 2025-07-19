@@ -72,10 +72,9 @@ class Settings(BaseSettings):
     VECTOR_COLLECTION_NAME: str = Field(
         default="knowflow_vecotr_db", env="VECTOR_COLLECTION_NAME"
     )
-    SIMILARITY_THRESHOLD: float = 0.7
     CHUNK_SIZE: int = Field(default=700)
     CHUNK_OVERLAP: int = Field(default=80)
-    TOP_K_RESULTS: int = Field(default=5)
+    TOP_K_RESULTS: int = Field(default=8)
 
     # Graph Store
     GRAPH_BATCH_SIZE: int = Field(default=100)
