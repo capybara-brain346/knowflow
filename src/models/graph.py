@@ -43,10 +43,10 @@ class Relationship(BaseModel):
     @field_validator("type")
     def validate_type(cls, v):
         valid_types = {
-            "HAS_SECTION",
+            "CONTAINS",
+            "RELATED_TO",
             "MENTIONS",
             "HAS_TAG",
-            "RELATED_TO",
         }
         if v not in valid_types:
             raise ValueError(
