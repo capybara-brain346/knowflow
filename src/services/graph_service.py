@@ -8,13 +8,13 @@ from src.models.graph import GraphKnowledge
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.utils.utils import clean_llm_response
-from src.services.base_service import BaseLLMService
+from src.services.base_client import BaseLLMClient
 from datetime import datetime
 import re
 import uuid
 
 
-class GraphService(BaseLLMService):
+class GraphService(BaseLLMClient):
     def __init__(self):
         super().__init__("GraphService")
         try:

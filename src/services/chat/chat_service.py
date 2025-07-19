@@ -14,7 +14,7 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.services.graph_service import GraphService
 from src.services.auth_service import AuthService
-from src.services.base_service import BaseLLMService
+from src.services.base_client import BaseLLMClient
 from src.services.chat.query_decomposition import QueryDecompositionService
 from src.services.chat.retrieval_evaluation import RetrievalEvaluationService
 from src.models.database import Document
@@ -28,7 +28,7 @@ from src.models.database import ChatSession
 from src.utils.utils import clean_llm_response
 
 
-class ChatService(BaseLLMService):
+class ChatService(BaseLLMClient):
     def __init__(self, db: Session = None):
         super().__init__("ChatService")
         try:

@@ -2,10 +2,10 @@ from typing import List
 from langchain.schema import HumanMessage, SystemMessage
 
 from src.core.logging import logger
-from src.services.base_service import BaseLLMService
+from src.services.base_client import BaseLLMClient
 
 
-class QueryDecompositionService(BaseLLMService):
+class QueryDecompositionService(BaseLLMClient):
     def __init__(self):
         super().__init__("QueryDecompositionService")
 

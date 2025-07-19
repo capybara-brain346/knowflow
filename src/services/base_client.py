@@ -4,7 +4,7 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 
 
-class BaseLLMService:
+class BaseLLMClient:
     def __init__(self, service_name: str):
         self.service_name = service_name
         try:

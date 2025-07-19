@@ -3,11 +3,11 @@ from typing import List, Dict, Any
 from langchain.schema import HumanMessage, SystemMessage
 
 from src.core.logging import logger
-from src.services.base_service import BaseLLMService
+from src.services.base_client import BaseLLMClient
 from src.utils.utils import clean_llm_response
 
 
-class RetrievalEvaluationService(BaseLLMService):
+class RetrievalEvaluationService(BaseLLMClient):
     def __init__(self):
         super().__init__("RetrievalEvaluationService")
 
