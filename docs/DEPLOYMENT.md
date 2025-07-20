@@ -1,327 +1,279 @@
-# Deployment Guide
-
-## Infrastructure Overview
-
-### Cloud Provider Requirements
-
-- Kubernetes cluster (GKE/EKS/AKS)
-- Load balancer
-- Managed databases (optional)
-- Object storage
-- Monitoring and logging
-
-## Deployment Environments
-
-### Development
-
-- Local Docker setup
-- Mocked services where appropriate
-- Hot reload enabled
-- Debug logging
-
-### Staging
-
-- Minimal cloud resources
-- Automated deployments
-- Integration testing
-- Performance monitoring
-
-### Production
-
-- High availability setup
-- Auto-scaling
-- Regular backups
-- Full monitoring
-
-## Infrastructure as Code
-
-### Terraform Configuration
-
-```hcl
-# Main VPC
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-
-  tags = {
-    Name = "knowflow-${var.environment}"
-  }
-}
-
-# EKS Cluster
-resource "aws_eks_cluster" "main" {
-  name     = "knowflow-${var.environment}"
-  version  = "1.27"
-
-  vpc_config {
-    subnet_ids = aws_subnet.private[*].id
-  }
-}
-
-# RDS Instance
-resource "aws_db_instance" "postgres" {
-  engine               = "postgres"
-  engine_version       = "16.1"
-  instance_class      = "db.t3.medium"
-  allocated_storage   = 50
-
-  backup_retention_period = 7
-  multi_az             = true
-}
-```
-
-## Kubernetes Deployment
-
-### Base Configuration
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: knowflow-api
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: knowflow-api
-  template:
-    spec:
-      containers:
-        - name: api
-          image: knowflow/api:latest
-          resources:
-            requests:
-              memory: "4Gi"
-              cpu: "2"
-            limits:
-              memory: "8Gi"
-              cpu: "4"
-```
-
-### Autoscaling
-
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: knowflow-api-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: knowflow-api
-  minReplicas: 3
-  maxReplicas: 10
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
-```
-
-## Database Management
-
-### Backup Strategy
-
-1. **PostgreSQL**
-
-   - Daily full backups
-   - Point-in-time recovery
-   - Cross-region replication
-
-2. **Neo4j**
-
-   - Regular snapshots
-   - Transaction logs
-   - Standby replicas
-
-3. **Qdrant**
-   - Volume snapshots
-   - Regular backups
-   - Replication setup
-
-## Monitoring & Observability
+# 📄 Knowflow Infra Provisioning via AWS Console
 
-### Prometheus Configuration
-
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+## **1️⃣ VPC Setup**
 
-scrape_configs:
-  - job_name: "knowflow-api"
-    kubernetes_sd_configs:
-      - role: pod
-    relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_label_app]
-        regex: knowflow-api
-        action: keep
-```
+- Go to **VPC Console** → **Your VPCs** → **Create VPC**:
 
-### Grafana Dashboards
+  - Name: `KnowflowVPC`
+  - IPv4 CIDR block: `10.0.0.0/16`
+  - Tenancy: Default
 
-1. API Performance
+### Create Subnets:
 
-   - Request latency
-   - Error rates
-   - Throughput
+- Go to **Subnets** → **Create subnet**:
 
-2. Database Metrics
+  - **Subnet 1**:
 
-   - Connection pool
-   - Query performance
-   - Storage usage
+    - Name: `Public`
+    - Subnet Type: Public
+    - CIDR block: `10.0.0.0/24`
+    - Availability Zone: Choose one
 
-3. Vector Search
-   - Search latency
-   - Index size
-   - Cache hits/misses
+  - **Subnet 2**:
 
-## Security
+    - Name: `PrivateECS`
+    - Subnet Type: Private (with NAT)
+    - CIDR block: `10.0.1.0/24`
 
-### Network Security
+  - **Subnet 3**:
 
-1. VPC setup
-2. Security groups
-3. Network policies
-4. WAF configuration
+    - Name: `PrivateDB`
+    - Subnet Type: Private (with NAT)
+    - CIDR block: `10.0.2.0/24`
 
-### Access Management
+> Ensure subnets are associated with appropriate **Route Tables** and **NAT Gateway** for private subnets.
 
-1. IAM roles
-2. Service accounts
-3. RBAC policies
-4. Secret management
+---
 
-## SSL/TLS Configuration
+### **1️⃣ Create an Internet Gateway (IGW) for Public Subnets**
 
-### Certificate Management
+1. Go to **VPC Console** → **Internet Gateways**.
+2. Click **Create internet gateway**:
 
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: knowflow-tls
-spec:
-  secretName: knowflow-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-    - api.knowflow.com
-    - "*.knowflow.com"
-```
+   - Name: `Knowflow-IGW`.
 
-## Deployment Process
+3. Attach the IGW to your **KnowflowVPC**.
 
-### CI/CD Pipeline
+---
 
-1. Build and test
-2. Security scan
-3. Deploy to staging
-4. Run integration tests
-5. Deploy to production
-6. Post-deployment checks
+### **2️⃣ Create a NAT Gateway for Private Subnets**
 
-### Rollback Procedure
+1. Go to **VPC Console** → **NAT Gateways**.
+2. Click **Create NAT gateway**:
 
-1. Identify issue
-2. Revert deployment
-3. Verify services
-4. Root cause analysis
+   - Subnet: Choose your **Public Subnet**.
+   - Elastic IP: Allocate a new Elastic IP.
+   - Name: `Knowflow-NATGW`.
 
-## Scaling Strategy
+This NAT Gateway enables internet access for private subnets without exposing them directly.
 
-### Vertical Scaling
+---
 
-- API: Up to 8 vCPU, 16GB RAM
-- Databases: Based on load
+### **3️⃣ Create Route Tables**
 
-### Horizontal Scaling
+#### A. **Public Route Table** (For Public Subnet)
 
-- API: 3-10 replicas
-- Read replicas for databases
-- Load balancer configuration
+1. Go to **Route Tables** → **Create Route Table**:
 
-## Disaster Recovery
+   - Name: `Public-RT`.
+   - VPC: Select `KnowflowVPC`.
 
-### Backup Locations
+2. After creation:
 
-- Primary region: us-east-1
-- Backup region: us-west-2
+   - Select `Public-RT`.
+   - Go to **Routes** tab → **Edit Routes**:
 
-### Recovery Time Objectives
+     - Add route:
 
-- RTO: 4 hours
-- RPO: 15 minutes
+       - Destination: `0.0.0.0/0`
+       - Target: Your **Internet Gateway (IGW)**
 
-### Recovery Steps
+3. Go to **Subnet Associations** → **Edit subnet associations**:
 
-1. Activate backup region
-2. Restore from backups
-3. Update DNS
-4. Verify services
+   - Select your **Public Subnet** (`Public`).
 
-## Cost Optimization
+---
 
-### Resource Management
+#### B. **Private Route Table** (For PrivateECS & PrivateDB)
 
-1. Right-sizing instances
-2. Spot instances where applicable
-3. Auto-scaling policies
-4. Storage optimization
+1. Go to **Route Tables** → **Create Route Table**:
 
-### Monitoring and Alerts
+   - Name: `Private-RT`.
+   - VPC: Select `KnowflowVPC`.
 
-1. Cost anomaly detection
-2. Budget alerts
-3. Resource utilization
-4. Waste identification
+2. After creation:
 
-## Maintenance
+   - Select `Private-RT`.
+   - Go to **Routes** tab → **Edit Routes**:
 
-### Update Strategy
+     - Add route:
 
-1. Regular security updates
-2. Database maintenance
-3. Dependency updates
-4. Infrastructure patches
+       - Destination: `0.0.0.0/0`
+       - Target: Your **NAT Gateway**.
 
-### Maintenance Windows
+3. Go to **Subnet Associations** → **Edit subnet associations**:
 
-- Non-critical: Weekly
-- Security: As needed
-- Database: Monthly
+   - Select both:
 
-## Troubleshooting Guide
+     - **PrivateECS Subnet**.
+     - **PrivateDB Subnet**.
 
-### Common Issues
+## **2️⃣ Security Groups**
 
-1. Pod startup failures
-2. Database connectivity
-3. Memory pressure
-4. Network issues
+### **ALB-SG**
 
-### Debug Process
+- In **EC2 Console** → **Security Groups** → **Create security group**:
 
-1. Check logs
-2. Monitor metrics
-3. Review events
-4. Analyze traces
+  - Name: `ALB-SG`
+  - VPC: `KnowflowVPC`
+  - Inbound Rules:
 
-## Contact Information
+    - Allow TCP 80 (HTTP) from 0.0.0.0/0
+    - Allow TCP 443 (HTTPS) from 0.0.0.0/0
 
-### On-Call Rotation
+### **ECS-SG**
 
-- Primary: DevOps Team
-- Secondary: Database Team
-- Escalation: Platform Team
+- Name: `ECS-SG`
+- VPC: `KnowflowVPC`
+- No inbound rules needed (default outbound will suffice).
 
-### Emergency Procedures
+### **RDS-SG**
 
-1. Incident response
-2. Communication plan
-3. Escalation matrix
-4. Post-mortem process
+- Name: `RDS-SG`
+- VPC: `KnowflowVPC`
+- Inbound Rules:
+
+  - Allow TCP 5432 (PostgreSQL) from `ECS-SG` (select the security group itself as source).
+
+---
+
+## **3️⃣ Secrets Manager**
+
+- Go to **Secrets Manager** → **Store a new secret**:
+
+  - Secret Name: `knowflow-app-secrets`
+  - Secret Type: Other type of secret / Plaintext
+  - Add key-value pairs as needed (like `SECRET_KEY`, `DATABASE_URL`, etc.)
+
+---
+
+## **4️⃣ ECR Repositories**
+
+- Go to **ECR Console**:
+
+  - Create Repository → Name: `FastAPIRepo`
+  - Create Repository → Name: `Neo4jRepo`
+
+Push your Docker images manually or via CI/CD.
+
+---
+
+## **5️⃣ IAM Role for ECS Tasks**
+
+- Go to **IAM Console** → **Roles** → **Create Role**:
+
+  - Trusted Entity: AWS service → ECS Task
+  - Attach Policies:
+
+    - SecretsManagerReadWrite (or custom policy scoped to your secret)
+    - S3 permissions as per your project (`s3:PutObject`, `s3:GetObject`, etc.)
+
+  - Role Name: `EcsTaskRole`
+
+---
+
+## **6️⃣ ECS Cluster**
+
+- Go to **ECS Console** → **Clusters** → **Create Cluster**:
+
+  - Cluster name: `KnowflowCluster`
+  - VPC: Select `KnowflowVPC`
+
+---
+
+## **7️⃣ RDS PostgreSQL**
+
+- Go to **RDS Console** → **Databases** → **Create database**:
+
+  - Engine: PostgreSQL (version 15.3)
+  - Template: Free tier or Production
+  - Credentials:
+
+    - Username: `postgres`
+    - Password: Auto-generated or custom
+
+  - Instance class: `db.t3.small` or similar
+  - Storage: 20GB
+  - Connectivity:
+
+    - VPC: `KnowflowVPC`
+    - Subnet group: Create a new one with `PrivateDB` subnets
+    - Security Group: Attach `RDS-SG`
+    - Public access: No
+
+---
+
+## **8️⃣ ECS Services**
+
+### **A. FastAPI Service (ALB Fargate)**
+
+- Go to **ECS Console** → **Clusters** → `KnowflowCluster`
+- Create Service:
+
+  - Launch Type: Fargate
+  - Task Definition: Create a new one:
+
+    - Container:
+
+      - Image: From `FastAPIRepo`
+      - Port Mapping: 8000
+      - Environment variables: Add as required (`ENVIRONMENT=production`)
+      - Task Role: Attach `EcsTaskRole`
+
+    - Memory: 1024 MiB
+    - CPU: 512 units
+
+  - Service:
+
+    - Desired Count: 1
+
+  - Networking:
+
+    - Subnets: `PrivateECS`
+    - Security Group: `ECS-SG`
+    - Load Balancer:
+
+      - Create new ALB
+      - Attach `ALB-SG`
+      - Listener: Port 80
+      - Target group: point to the service
+
+---
+
+### **B. Neo4j Service (Private Fargate)**
+
+- In the same ECS Cluster:
+
+  - Create Fargate Service:
+
+    - Task Definition:
+
+      - Container Image: `neo4j:5.19`
+      - Environment Variable:
+
+        - `NEO4J_AUTH=neo4j/password`
+
+      - Port Mapping: 7687
+      - Task Role: Attach `EcsTaskRole`
+
+    - Service:
+
+      - Desired Count: 1
+
+    - Networking:
+
+      - Subnets: `PrivateECS`
+      - Assign public IP: **No**
+      - Security Group: `ECS-SG`
+
+---
+
+## ✅ **Post-Provisioning Checklist**
+
+- Verify:
+
+  - Secrets contain all sensitive configs.
+  - RDS is accessible only from ECS services.
+  - ALB points correctly to FastAPI containers.
+  - Neo4j service remains isolated without public exposure.
+  - S3 permissions work as intended from ECS.
