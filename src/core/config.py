@@ -65,12 +65,14 @@ class Settings(BaseSettings):
 
     # AI Models
     GOOGLE_API_KEY: str = Field(default="")
-    GEMINI_EMBEDDING_MODEL: str = Field(default="", env="GEMINI_EMBEDDING_MODEL")
-    GEMINI_MODEL_NAME: str = Field(default="", env="GEMINI_MODEL_NAME")
+    GEMINI_EMBEDDING_MODEL: str = Field(
+        default="models/embedding-001", env="GEMINI_EMBEDDING_MODEL"
+    )
+    GEMINI_MODEL_NAME: str = Field(default="gemini-2.0-flash", env="GEMINI_MODEL_NAME")
 
     # Vector Store
     VECTOR_COLLECTION_NAME: str = Field(
-        default="knowflow_vecotr_db", env="VECTOR_COLLECTION_NAME"
+        default="knowflow_vector_db", env="VECTOR_COLLECTION_NAME"
     )
     CHUNK_SIZE: int = Field(default=700)
     CHUNK_OVERLAP: int = Field(default=80)

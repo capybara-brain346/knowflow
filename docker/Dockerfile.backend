@@ -13,7 +13,7 @@ RUN sh /uv-installer.sh && rm /uv-installer.sh
 
 ENV PATH="/root/.local/bin/:$PATH"
 
-COPY .env requirements.txt pyproject.toml uv.lock .python-version ./
+COPY requirements.txt pyproject.toml uv.lock .python-version ./
 
 RUN uv sync --locked
 
