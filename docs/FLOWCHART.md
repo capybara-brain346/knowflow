@@ -1,200 +1,267 @@
-# KnowFlow System Architecture
+# KnowFlow Technical Architecture
 
-## Overview
+## Document Processing Pipeline
 
-KnowFlow is an AI-powered knowledge management system that combines multiple advanced components to provide intelligent document processing, chat interactions, and knowledge retrieval.
+### 1. Document Upload & Initial Processing
 
-## System Components
+- **Supported Formats**: PDF, DOCX, CSV, TXT
+- **Document Loaders**:
+  - PDF: `PyMuPDFLoader`
+  - DOCX: `Docx2txtLoader`
+  - CSV: `CSVLoader`
+  - TXT: `TextLoader`
+  - Fallback: `UnstructuredFileLoader`
 
-### 1. Client Layer
+### 2. Text Processing
 
-- **Frontend UI**: User interface for interacting with the system
+- **Text Splitter**: `RecursiveCharacterTextSplitter`
+  ```python
+  text_splitter = RecursiveCharacterTextSplitter(
+      chunk_size=1000,
+      chunk_overlap=200,
+      separators=["\n\n", "\n", " ", ""],
+      keep_separator=True
+  )
+  ```
 
-### 2. Routes Layer
+### 3. Vector Generation
 
-- **Auth Routes**: Authentication and user management endpoints
-- **Chat Routes**: Chat interaction endpoints
-- **Document Routes**: Document processing endpoints
-- **Session Routes**: Chat session management endpoints
+- **Embedding Model**: Gemini Embedding Model
+- **Vector Store**: PGVector (PostgreSQL)
+  ```python
+  vector_store = PGVector(
+      connection=DATABASE_URL,
+      embeddings=embeddings,
+      collection_name=VECTOR_COLLECTION_NAME
+  )
+  ```
 
-### 3. Core Services
+### 4. Knowledge Graph Construction
 
-- **Auth Service**: User authentication and authorization
-- **Chat Service**: Main chat processing and orchestration
-- **Document Service**: Document processing and indexing
-- **Session Service**: Chat session management
-- **Graph Service**: Knowledge graph operations
-- **S3 Service**: File storage management
+- **Database**: Neo4j
+- **Node Types**:
+  - Document: Main document node
+  - Section: Document sections
+  - Entity: Named entities
+  - Concept: Key ideas/terms
+  - Tag: Categories
+- **Relationship Types**:
+  - CONTAINS: Hierarchy
+  - RELATED_TO: General connections
+  - MENTIONS: References
+  - HAS_TAG: Classifications
 
-### 4. AI Components
+## Query Processing Pipeline
 
-#### LLM Services
+### 1. Query Analysis
 
-- **Base LLM Client**: Gemini Pro integration for natural language processing
-- **Query Decomposition**: Breaks complex queries into manageable sub-questions
-- **Retrieval Evaluation**: Evaluates and improves retrieval quality
+- **Query Decomposition**:
+  ```python
+  messages = [
+      SystemMessage(content="Query decomposition prompt"),
+      HumanMessage(content=query)
+  ]
+  sub_questions = llm.invoke(messages)
+  ```
 
-#### Vector Store
+### 2. Retrieval Process
 
-- **PGVector Store**: PostgreSQL-based vector storage for semantic search
-- **Embeddings**: Gemini Embedding model for document vectorization
+- **Vector Search**:
+  ```python
+  docs_and_scores = vector_store.similarity_search_with_score_by_vector(
+      embedding=query_embedding,
+      k=TOP_K_RESULTS,
+      filter=filter_dict
+  )
+  ```
+- **Graph Search**:
+  - Cypher query generation
+  - Pattern matching
+  - Context retrieval
 
-#### Knowledge Graph
+### 3. Retrieval Evaluation
 
-- **Neo4j Graph DB**: Graph database for structured knowledge
-- **Knowledge Extraction**: Converts text to graph structures
+- **Quality Metrics**:
+  ```json
+  {
+      "chunk_scores": [
+          {"chunk": "text", "relevance_score": 0-10, "reasoning": "explanation"}
+      ],
+      "missing_aspects": ["list of missing information"],
+      "redundant_information": ["list of redundancies"],
+      "suggested_improvements": {
+          "additional_info_needed": ["missing info"],
+          "alternative_search_terms": ["suggested terms"]
+      },
+      "overall_quality_score": 0-10
+  }
+  ```
 
-### 5. External Services
+### 4. Response Generation
 
-- **Google Cloud (Gemini API)**: Powers LLM and embedding operations
-- **AWS S3**: Document storage
+- **Context Assembly**:
 
-## Key Flows
+  ```python
+  def _merge_results(vector_results, graph_results):
+      graph_texts = []
+      for result in graph_results:
+          text = f"Type: {result.get('type')}\n"
+          text += f"Properties: {result.get('properties')}\n"
+          text += f"Relationships: {result.get('relationships')}"
+          graph_texts.append(text)
 
-### 1. Document Processing Flow
+      all_texts = vector_results[:3] + graph_texts[:3]
+      return "\n\n".join(all_texts)
+  ```
 
-1. Documents uploaded through Document Routes
-2. Document Service processes them
-3. Raw content stored in S3
-4. Embeddings generated and stored in PGVector
-5. Knowledge extracted and stored in Neo4j
+- **LLM Prompt Structure**:
+  ```python
+  system_prompt = f"""
+  You are a helpful, reasoning assistant. Answer based on:
+  Context: {context}
+  Guidelines:
+  - Rephrase/summarize from context
+  - Use reasoning to clarify
+  - No fabrication
+  - Indicate if answer unavailable
+  """
+  ```
 
-### 2. Chat Flow
+## Storage Architecture
 
-1. User query received via Chat Routes
-2. Chat Service orchestrates:
-   - Query decomposition for complex queries
-   - Vector search for relevant content
-   - Knowledge graph querying
-   - Retrieval evaluation and improvement
-   - LLM response generation
+### 1. Vector Store (PostgreSQL)
 
-### 3. AI Processing Flow
+- **Schema**:
+  ```sql
+  CREATE TABLE document_chunks (
+      id SERIAL PRIMARY KEY,
+      document_id INTEGER,
+      chunk_index INTEGER,
+      content TEXT,
+      embedding_vector vector(768),
+      metadata JSONB
+  );
+  ```
 
-- Base LLM Client manages all Gemini API interactions
-- Query Decomposition handles complex queries
-- Retrieval Evaluation ensures response quality
-- Knowledge Graph maintains structured information
-- Vector Store enables semantic search
+### 2. Graph Database (Neo4j)
 
-## Mermaid Diagram
+- **Node Properties**:
+  ```json
+  {
+    "id": "unique_id",
+    "type": "node_type",
+    "name": "node_name",
+    "content": "text_content",
+    "created_at": "timestamp"
+  }
+  ```
+- **Relationship Properties**:
+  ```json
+  {
+      "type": "relationship_type",
+      "context": "relationship_context",
+      "confidence": 0.0-1.0,
+      "created_at": "timestamp"
+  }
+  ```
+
+### 3. Document Storage (S3)
+
+- **Structure**:
+  ```
+  s3://bucket/
+    └── users/
+        └── {user_id}/
+            └── documents/
+                └── {doc_id}.{extension}
+  ```
+
+## Mermaid Technical Flowchart
 
 ```mermaid
 flowchart TB
-    subgraph Client
-        UI["Frontend UI"]
-    end
+    %% Document Processing Pipeline
+    subgraph Document_Processing["Document Processing Pipeline"]
+        direction TB
+        Upload["Document Upload<br/>Supported: PDF, DOCX, CSV, TXT"]
 
-    subgraph Routes
-        AR["Auth Routes"]
-        CR["Chat Routes"]
-        DR["Document Routes"]
-        SR["Session Routes"]
-    end
-
-    subgraph Core_Services
-        AS["Auth Service"]
-        CS["Chat Service"]
-        DS["Document Service"]
-        SS["Session Service"]
-        GS["Graph Service"]
-        S3["S3 Service"]
-    end
-
-    subgraph AI_Components
-        subgraph LLM["LLM Services"]
-            BC["Base LLM Client<br/>(Gemini Pro)"]
-            QD["Query Decomposition<br/>Service"]
-            RE["Retrieval Evaluation<br/>Service"]
+        subgraph Processing["Document Processing"]
+            Loader["Document Loaders<br/>PyMuPDF/Docx2txt/CSV/Text"]
+            Splitter["Text Splitter<br/>RecursiveCharacterTextSplitter<br/>chunk_size=1000, overlap=200"]
+            VectorGen["Vector Generation<br/>Gemini Embedding Model"]
         end
 
-        subgraph Vector_Store
-            PV["PGVector Store<br/>(PostgreSQL)"]
-            EM["Embeddings<br/>(Gemini Embedding)"]
+        subgraph Storage["Storage Layer"]
+            S3Store["S3 Storage<br/>Raw Documents"]
+            PGVector["PGVector Store<br/>- document_id<br/>- chunk_index<br/>- embedding_vector<br/>- metadata"]
+            Neo4j["Neo4j Graph DB<br/>Node Types: Document, Section,<br/>Entity, Concept, Tag<br/>Relations: CONTAINS, RELATED_TO,<br/>MENTIONS, HAS_TAG"]
         end
 
-        subgraph Knowledge_Graph
-            Neo["Neo4j Graph DB"]
-            KE["Knowledge Extraction"]
+        Upload --> Loader
+        Loader --> Splitter
+        Splitter --> VectorGen
+        VectorGen --> PGVector
+        Upload --> S3Store
+        Splitter --> Neo4j
+    end
+
+    %% Query Processing Pipeline
+    subgraph Query_Processing["Query Processing Pipeline"]
+        direction TB
+        Query["User Query"]
+
+        subgraph Query_Analysis["Query Analysis"]
+            QDecomp["Query Decomposition<br/>Complex Query → Sub-questions<br/>Using Gemini Pro"]
+            QEmbed["Query Embedding<br/>Gemini Embedding Model"]
         end
+
+        subgraph Retrieval["Retrieval Layer"]
+            VecSearch["Vector Search<br/>Similarity Search with Scores<br/>TOP_K=5"]
+            GraphSearch["Graph Search<br/>Cypher Query Generation<br/>Pattern Matching"]
+        end
+
+        subgraph Evaluation["Retrieval Evaluation"]
+            RelCheck["Relevance Check<br/>Score: 0-10"]
+            ImproveSuggestions["Improvement Suggestions<br/>- Missing Aspects<br/>- Alternative Terms"]
+        end
+
+        Query --> QDecomp
+        QDecomp --> QEmbed
+        QEmbed --> VecSearch
+        Query --> GraphSearch
+        VecSearch --> RelCheck
+        GraphSearch --> RelCheck
+        RelCheck --> ImproveSuggestions
+        ImproveSuggestions -.-> QEmbed
     end
 
-    subgraph External_Services
-        GCP["Google Cloud<br/>(Gemini API)"]
-        AWS["AWS S3"]
+    %% Response Generation
+    subgraph Response_Gen["Response Generation"]
+        direction TB
+        Context["Context Assembly<br/>Vector + Graph Results"]
+        LLMPrompt["LLM Prompt Construction<br/>System + Context + Query"]
+        Response["Response Generation<br/>Gemini Pro"]
+
+        Context --> LLMPrompt
+        LLMPrompt --> Response
     end
 
-    %% Client to Routes
-    UI --> AR
-    UI --> CR
-    UI --> DR
-    UI --> SR
+    %% Data Connections
+    PGVector --> VecSearch
+    Neo4j --> GraphSearch
+    VecSearch --> Context
+    GraphSearch --> Context
 
-    %% Routes to Services
-    AR --> AS
-    CR --> CS
-    DR --> DS
-    SR --> SS
+    %% External Services
+    subgraph External["External Services"]
+        direction LR
+        Gemini["Google Gemini Pro<br/>- Chat Completion<br/>- Embeddings"]
+        AWS["AWS S3<br/>Document Storage"]
+    end
 
-    %% Core Service Dependencies
-    CS --> BC
-    CS --> QD
-    CS --> RE
-    CS --> PV
-    CS --> GS
-    CS --> SS
-
-    DS --> S3
-    DS --> PV
-    DS --> GS
-    DS --> EM
-
-    %% AI Component Interactions
-    BC --> GCP
-    QD --> BC
-    RE --> BC
-    EM --> GCP
-    GS --> Neo
-    GS --> BC
-    GS --> KE
-    KE --> BC
-
-    %% Storage Connections
-    S3 --> AWS
-    PV --> EM
-
-    %% Data Flow
-    DS --> PV
-    DS --> KE
-    CS --> PV
-    CS --> Neo
+    %% Service Connections
+    VectorGen --> Gemini
+    QEmbed --> Gemini
+    Response --> Gemini
+    S3Store --> AWS
 ```
-
-## System Features
-
-1. **Intelligent Document Processing**
-
-   - Automatic content extraction
-   - Semantic embedding generation
-   - Knowledge graph construction
-   - Structured storage
-
-2. **Advanced Query Processing**
-
-   - Query decomposition for complex questions
-   - Multi-source information retrieval
-   - Quality evaluation and improvement
-   - Context-aware responses
-
-3. **Knowledge Management**
-
-   - Semantic search capabilities
-   - Structured knowledge representation
-   - Relationship mapping
-   - Context preservation
-
-4. **Security & Organization**
-   - User authentication and authorization
-   - Session management
-   - Secure file storage
-   - Access control
