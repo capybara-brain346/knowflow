@@ -28,3 +28,6 @@ dependencies = [
     "pymupdf>=1.26.3",
     "pytest>=8.4.1",
 ]
+
+[dependency-groups]
+dev = []
