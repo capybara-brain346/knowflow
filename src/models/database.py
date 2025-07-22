@@ -1,9 +1,10 @@
+import enum
+import sqlalchemy
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text, Enum
 from sqlalchemy.orm import relationship
-import enum
-import sqlalchemy
 from sqlalchemy.sql import func
+
 from src.core.database import Base
 
 

@@ -1,5 +1,5 @@
-from typing import Any, Dict, Optional
 from fastapi import status
+from typing import Any, Dict, Optional
 
 
 class AppException(Exception):

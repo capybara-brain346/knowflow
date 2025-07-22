@@ -2,13 +2,13 @@ from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, UploadFile, BackgroundTasks, Query
 
 from src.core.auth import get_current_user
-from src.services.document_service import DocumentService
 from src.models.database import User
 from src.models.request import DocumentIndexRequest
 from src.models.response import (
     DocumentIndexResponse,
     MultiDocumentUploadResponse,
 )
+from src.services.document_service import DocumentService
 
 router = APIRouter()
 

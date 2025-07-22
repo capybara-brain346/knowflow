@@ -1,17 +1,16 @@
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
+from src.core.auth import get_current_user
+from src.models.database import User
 from src.models.request import CreateSessionRequest, SendMessageRequest
 from src.models.response import (
     ChatSessionResponse,
     ChatSessionListResponse,
-    MessageResponse,
 )
 from src.services.session_service import SessionService
-from src.core.auth import get_current_user
-from src.models.database import User
 
 router = APIRouter()
 

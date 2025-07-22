@@ -1,7 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
-from typing import BinaryIO, Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
 
 from src.core.config import settings

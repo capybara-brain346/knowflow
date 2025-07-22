@@ -1,8 +1,8 @@
+import json
+import boto3
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional, List
-import json
-import boto3
 from botocore.exceptions import ClientError
 from pydantic import Field
 from pydantic_settings import BaseSettings

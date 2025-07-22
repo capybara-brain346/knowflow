@@ -1,31 +1,23 @@
-import json
 from typing import List, Dict, Any, Optional
 from fastapi import HTTPException, status
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_postgres import PGVector
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from neo4j import GraphDatabase
 
+from src.core.database import get_db
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
+from src.models.request import FollowUpChatRequest
+from src.models.response import FollowUpChatResponse
+from src.models.database import ChatSession
+from src.models.database import Message
 from src.services.graph_service import GraphService
 from src.services.auth_service import AuthService
 from src.services.base_client import BaseLLMClient
 from src.services.chat.query_decomposition import QueryDecompositionService
 from src.services.chat.retrieval_evaluation import RetrievalEvaluationService
-from src.models.database import Document
-from src.models.database import DocumentChunk
-from src.models.database import DocumentStatus
-from src.models.database import Message
-from src.core.database import get_db
-from src.models.request import FollowUpChatRequest
-from src.models.response import FollowUpChatResponse
-from src.models.database import ChatSession
-from src.utils.utils import clean_llm_response
 
 
 class ChatService(BaseLLMClient):
@@ -34,17 +26,6 @@ class ChatService(BaseLLMClient):
         try:
             self.db = db or next(get_db())
             self.auth_service = AuthService(self.db)
-
-            self.embeddings = GoogleGenerativeAIEmbeddings(
-                model=settings.GEMINI_EMBEDDING_MODEL,
-                google_api_key=settings.GOOGLE_API_KEY,
-            )
-
-            self.vector_store = PGVector(
-                connection=settings.DATABASE_URL,
-                embeddings=self.embeddings,
-                collection_name=settings.VECTOR_COLLECTION_NAME,
-            )
 
             self.driver = GraphDatabase.driver(
                 settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)

@@ -1,3 +1,4 @@
+import tempfile
 import os
 import asyncio
 from typing import List, Optional, Dict, Any
@@ -13,21 +14,19 @@ from langchain_community.document_loaders import (
     Docx2txtLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-import tempfile
 
 from src.core.database import get_db
-from src.models.database import Document, DocumentStatus, DocumentChunk, User
-from src.services.s3_service import S3Service
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_postgres import PGVector
+from src.models.database import Document, DocumentStatus, DocumentChunk, User
+from src.services.s3_service import S3Service
 from src.services.graph_service import GraphService
+from src.services.base_client import BaseLLMClient
 from src.utils.utils import clean_whitespaes
 
 
-class DocumentService:
+class DocumentService(BaseLLMClient):
     SUPPORTED_MIMETYPES = {
         "application/pdf": ".pdf",
         "application/msword": ".doc",
@@ -41,9 +40,7 @@ class DocumentService:
     def __init__(
         self, db: Session = next(get_db()), current_user: Optional[User] = None
     ):
-        self.db = db
-        self.storage_service = S3Service()
-        self.current_user = current_user
+        super().__init__("DocumentService")
         try:
             try:
                 loop = asyncio.get_event_loop()
@@ -51,16 +48,9 @@ class DocumentService:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            self.embeddings = GoogleGenerativeAIEmbeddings(
-                model=settings.GEMINI_EMBEDDING_MODEL,
-                google_api_key=settings.GOOGLE_API_KEY,
-            )
-
-            self.vector_store = PGVector(
-                connection=settings.DATABASE_URL,
-                embeddings=self.embeddings,
-                collection_name=settings.VECTOR_COLLECTION_NAME,
-            )
+            self.db = db
+            self.storage_service = S3Service()
+            self.current_user = current_user
 
             self.text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=settings.CHUNK_SIZE,

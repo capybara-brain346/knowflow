@@ -1,13 +1,10 @@
-from datetime import datetime, timezone
 import time
 import uuid
-from typing import Callable, Optional
-
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.types import Message
 
 from src.core.config import settings
 from src.core.logging import logger

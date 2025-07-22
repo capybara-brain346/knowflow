@@ -2,15 +2,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.core.config import settings
+from src.core.middleware import setup_middleware
+from src.core.database import init_db
+from src.core.logging import logger
 from src.routes import (
     auth_routes,
     chat_routes,
     document_routes,
     session_routes,
 )
-from src.core.middleware import setup_middleware
-from src.core.database import init_db
-from src.core.logging import logger
 
 
 @asynccontextmanager
