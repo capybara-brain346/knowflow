@@ -1,0 +1,9 @@
+[MESSAGES CONTROL]
+disable = 
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    logging-fstring-interpolation,
+    raise-missing-from,
+    broad-exception-caught,
+    wrong-import-order
