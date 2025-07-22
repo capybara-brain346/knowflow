@@ -7,3 +7,4 @@ disable =
     raise-missing-from,
     broad-exception-caught,
     wrong-import-order
+    import-error
