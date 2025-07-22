@@ -1,9 +1,13 @@
-# KNOWFLOW
-
+# KnowFlow
+---
 ![Gemini_Generated_Image_j5414ij5414ij541](https://github.com/user-attachments/assets/032a9bc6-b0fb-437d-93cd-a9f063220e03)
 
-
+# Deployment
+---
 <img width="2942" height="2022" alt="diagram-export-7-20-2025-6_03_33-PM" src="https://github.com/user-attachments/assets/8f8fc44a-766d-48c0-97aa-59ef0883bdfd" />
+
+# AI Infra
+---
 <img width="4030" height="3416" alt="diagram-export-7-20-2025-6_57_03-PM" src="https://github.com/user-attachments/assets/22e8bfb1-ebc2-4824-80b0-5cf01e4094cc" />
 
 KnowFlow is a powerful hybrid Retrieval-Augmented Generation (RAG) system that combines semantic search with knowledge graph capabilities for intelligent document processing and querying.
