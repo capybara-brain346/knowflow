@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
 import uuid
 
-from src.models.database import ChatSession, Message, User
+from src.models.database import ChatSession, Message
 
 
 class SessionService:

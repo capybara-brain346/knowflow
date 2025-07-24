@@ -1,4 +1,6 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_postgres import PGVector
+
 from src.core.config import settings
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
@@ -13,6 +15,18 @@ class BaseLLMClient:
                 model=settings.GEMINI_MODEL_NAME,
                 convert_system_message_to_human=True,
             )
+
+            self.embeddings = GoogleGenerativeAIEmbeddings(
+                model=settings.GEMINI_EMBEDDING_MODEL,
+                google_api_key=settings.GOOGLE_API_KEY,
+            )
+
+            self.vector_store = PGVector(
+                connection=settings.DATABASE_URL,
+                embeddings=self.embeddings,
+                collection_name=settings.VECTOR_COLLECTION_NAME,
+            )
+
             logger.info(f"{service_name} initialized successfully")
         except Exception as e:
             logger.error(

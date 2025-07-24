@@ -26,4 +26,8 @@ dependencies = [
     "constructs>=10.4.2",
     "psycopg2-binary>=2.9.10",
     "pymupdf>=1.26.3",
+    "pytest>=8.4.1",
 ]
+
+[dependency-groups]
+dev = []

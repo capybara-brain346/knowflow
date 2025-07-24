@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from src.services.chat.chat_service import ChatService
+
+from src.core.auth import get_current_user
+from src.core.database import get_db
 from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.models.request import ChatRequest, FollowUpChatRequest, RenameChatRequest
@@ -10,9 +12,8 @@ from src.models.response import (
     RenameChatResponse,
     DeleteChatResponse,
 )
-from src.core.auth import get_current_user
 from src.models.database import User
-from src.core.database import get_db
+from src.services.chat.chat_service import ChatService
 from src.services.session_service import SessionService
 
 

@@ -1,0 +1,94 @@
+{
+    "taskDefinition": {
+        "taskDefinitionArn": "arn:aws:ecs:ap-south-1:953685791553:task-definition/knowflow-backend-task:1",
+        "containerDefinitions": [
+            {
+                "name": "knowflow-backend",
+                "image": "953685791553.dkr.ecr.ap-south-1.amazonaws.com/knowflow-backend:latest",
+                "cpu": 0,
+                "portMappings": [
+                    {
+                        "containerPort": 8000,
+                        "hostPort": 8000,
+                        "protocol": "tcp",
+                        "name": "knowflow-backend-8000-tcp",
+                        "appProtocol": "http"
+                    }
+                ],
+                "essential": true,
+                "secrets": [
+                    {
+                        "name": "AWS_ACCESS_KEY_ID",
+                        "valueFrom": "arn:aws:secretsmanager:ap-south-1:953685791553:secret:knowflow/app-secrets:AWS_ACCESS_KEY_ID::"
+                    },
+                    {
+                        "name": "AWS_SECRET_ACCESS_KEY",
+                        "valueFrom": "arn:aws:secretsmanager:ap-south-1:953685791553:secret:knowflow/app-secrets:AWS_SECRET_ACCESS_KEY::"
+                    }
+                ],
+                "environmentFiles": [],
+                "mountPoints": [],
+                "volumesFrom": [],
+                "ulimits": [],
+                "healthCheck": {
+                    "command": [
+                        "CMD-SHELL",
+                        "curl -f http://localhost:8000/health || exit 1"
+                    ],
+                    "interval": 10,
+                    "timeout": 5,
+                    "retries": 3
+                },
+                "systemControls": []
+            }
+        ],
+        "family": "knowflow-backend-task",
+        "taskRoleArn": "arn:aws:iam::953685791553:role/ECSTaskRole",
+        "executionRoleArn": "arn:aws:iam::953685791553:role/ecsTaskExecutionRole",
+        "networkMode": "awsvpc",
+        "revision": 1,
+        "volumes": [],
+        "status": "ACTIVE",
+        "requiresAttributes": [
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.24"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.ecr-auth"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.task-iam-role"
+            },
+            {
+                "name": "ecs.capability.container-health-check"
+            },
+            {
+                "name": "ecs.capability.execution-role-ecr-pull"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+            },
+            {
+                "name": "ecs.capability.task-eni"
+            }
+        ],
+        "placementConstraints": [],
+        "compatibilities": [
+            "EC2",
+            "FARGATE"
+        ],
+        "runtimePlatform": {
+            "cpuArchitecture": "X86_64",
+            "operatingSystemFamily": "LINUX"
+        },
+        "requiresCompatibilities": [
+            "FARGATE"
+        ],
+        "cpu": "2048",
+        "memory": "8192",
+        "registeredAt": "2025-07-20T08:14:39.290000+05:30",
+        "registeredBy": "arn:aws:iam::953685791553:root",
+        "enableFaultInjection": false
+    },
+    "tags": []
+}
