@@ -1,25 +1,11 @@
-import json
-import boto3
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional, List
-from botocore.exceptions import ClientError
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
 load_dotenv()
-
-
-def get_aws_secret(secret_name: str, region_name: str = "ap-south-1") -> dict:
-    session = boto3.session.Session()
-    client = session.client(service_name="secretsmanager", region_name=region_name)
-    try:
-        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-        secret = get_secret_value_response["SecretString"]
-        return dict(json.loads(secret))
-    except ClientError as e:
-        raise e
 
 
 class Settings(BaseSettings):
@@ -46,25 +32,29 @@ class Settings(BaseSettings):
     RELOAD: bool = Field(default=False, env="RELOAD")
 
     # Security
-    SECRET_KEY: str = Field(default="")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30)
+    SECRET_KEY: str = Field(default="your-secret-key-here", env="SECRET_KEY")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES"
+    )
 
     # Database
-    DATABASE_URL: str = Field(default="")
+    DATABASE_URL: str = Field(
+        default="postgresql://user:pass@localhost:5432/db", env="DATABASE_URL"
+    )
 
     # Neo4j
-    NEO4J_URI: str = Field(default="")
-    NEO4J_USER: str = Field(default="")
-    NEO4J_PASSWORD: str = Field(default="")
+    NEO4J_URI: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
+    NEO4J_USER: str = Field(default="neo4j", env="NEO4J_USER")
+    NEO4J_PASSWORD: str = Field(default="password", env="NEO4J_PASSWORD")
 
     # AWS S3
-    AWS_ACCESS_KEY_ID: str = Field(default="")
-    AWS_SECRET_ACCESS_KEY: str = Field(default="")
-    AWS_REGION: str = Field(default="ap-south-1")
-    S3_BUCKET_NAME: str = Field(default="")
+    AWS_ACCESS_KEY_ID: str = Field(default="", env="AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY: str = Field(default="", env="AWS_SECRET_ACCESS_KEY")
+    AWS_REGION: str = Field(default="ap-south-1", env="AWS_REGION")
+    S3_BUCKET_NAME: str = Field(default="", env="S3_BUCKET_NAME")
 
     # AI Models
-    GOOGLE_API_KEY: str = Field(default="")
+    GOOGLE_API_KEY: str = Field(default="", env="GOOGLE_API_KEY")
     GEMINI_EMBEDDING_MODEL: str = Field(
         default="models/embedding-001", env="GEMINI_EMBEDDING_MODEL"
     )
@@ -95,33 +85,6 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._load_secrets()
-
-    def _load_secrets(self):
-        secrets = get_aws_secret("knowflow/app-secrets")
-
-        if secrets:
-            self.SECRET_KEY = secrets.get("SECRET_KEY", self.SECRET_KEY)
-            self.ACCESS_TOKEN_EXPIRE_MINUTES = int(
-                secrets.get(
-                    "ACCESS_TOKEN_EXPIRE_MINUTES", self.ACCESS_TOKEN_EXPIRE_MINUTES
-                )
-            )
-            self.DATABASE_URL = secrets.get("DATABASE_URL", self.DATABASE_URL)
-            self.NEO4J_URI = secrets.get("NEO4J_URI", self.NEO4J_URI)
-            self.NEO4J_USER = secrets.get("NEO4J_USER", self.NEO4J_USER)
-            self.NEO4J_PASSWORD = secrets.get("NEO4J_PASSWORD", self.NEO4J_PASSWORD)
-            self.AWS_ACCESS_KEY_ID = secrets.get(
-                "AWS_ACCESS_KEY_ID", self.AWS_ACCESS_KEY_ID
-            )
-            self.AWS_SECRET_ACCESS_KEY = secrets.get(
-                "AWS_SECRET_ACCESS_KEY", self.AWS_SECRET_ACCESS_KEY
-            )
-            self.S3_BUCKET_NAME = secrets.get("S3_BUCKET_NAME", self.S3_BUCKET_NAME)
-            self.GOOGLE_API_KEY = secrets.get("GOOGLE_API_KEY", self.GOOGLE_API_KEY)
-            self.GEMINI_EMBEDDING_MODEL = secrets.get(
-                "GEMINI_EMBEDDING_MODEL", self.GEMINI_EMBEDDING_MODEL
-            )
 
     class Config:
         env_file = ".env"
