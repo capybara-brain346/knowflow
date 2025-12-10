@@ -13,7 +13,7 @@ from langchain_community.document_loaders import (
     TextLoader,
     Docx2txtLoader,
 )
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.core.database import get_db
 from src.core.config import settings
@@ -21,7 +21,7 @@ from src.core.exceptions import ExternalServiceException
 from src.core.logging import logger
 from src.models.database import Document, DocumentStatus, DocumentChunk, User
 from src.services.s3_service import S3Service
-from src.services.graph_service import GraphService
+from src.services.memory_service import MemoryService
 from src.services.base_client import BaseLLMClient
 from src.utils.utils import clean_whitespaes
 
@@ -61,7 +61,7 @@ class DocumentService(BaseLLMClient):
                 length_function=len,
             )
 
-            self.graph_service = GraphService()
+            self.memory_service = MemoryService()
             logger.info("DocumentService initialized successfully")
         except Exception as e:
             logger.error(
@@ -256,10 +256,20 @@ class DocumentService(BaseLLMClient):
 
     def _store_graph_knowledge(self, doc_id: str, content: str) -> None:
         try:
-            self.graph_service.store_graph_knowledge(doc_id, content)
-            logger.info(f"Successfully stored graph knowledge for document {doc_id}")
+            self.memory_service.add_document_memory(
+                doc_id=doc_id,
+                content=content,
+                user_id=str(self.current_user.id),
+                metadata={
+                    "document_title": self.db.query(Document)
+                    .filter(Document.doc_id == doc_id)
+                    .first()
+                    .title
+                },
+            )
+            logger.info(f"Successfully stored document memory for document {doc_id}")
         except Exception as e:
-            logger.error(f"Failed to store graph knowledge: {str(e)}", exc_info=True)
+            logger.error(f"Failed to store document memory: {str(e)}", exc_info=True)
 
     async def _generate_embeddings(self, chunks: List[str]) -> List[List[float]]:
         loop = asyncio.get_event_loop()

@@ -1,6 +1,6 @@
-FROM neo4j:5.15.0
+FROM neo4j:5.26.0
 
-ENV NEO4J_AUTH=neo4j/Pstm!tr0ae#123
+ENV NEO4J_AUTH=neo4j/Pstm!tr0ae123
 ENV NEO4J_PLUGINS=["apoc"]
 ENV NEO4J_dbms_security_procedures_unrestricted=apoc.*
 ENV NEO4J_dbms_default__listen__address=0.0.0.0

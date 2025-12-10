@@ -42,10 +42,13 @@ class Settings(BaseSettings):
         default="postgresql://user:pass@localhost:5432/db", env="DATABASE_URL"
     )
 
-    # Neo4j
+    # Neo4j (for Mem0 Graph Memory)
+    # Use bolt://neo4j:7687 when running in Docker
+    # Use bolt://localhost:7687 when running locally
     NEO4J_URI: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
     NEO4J_USER: str = Field(default="neo4j", env="NEO4J_USER")
-    NEO4J_PASSWORD: str = Field(default="password", env="NEO4J_PASSWORD")
+    NEO4J_PASSWORD: str = Field(default="Pstm!tr0ae#123", env="NEO4J_PASSWORD")
+    NEO4J_DATABASE: str = Field(default="neo4j", env="NEO4J_DATABASE")
 
     # AWS S3
     AWS_ACCESS_KEY_ID: str = Field(default="", env="AWS_ACCESS_KEY_ID")
@@ -68,10 +71,15 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = Field(default=80)
     TOP_K_RESULTS: int = Field(default=8)
 
-    # Graph Store
+    # Graph Store (Legacy - for backward compatibility)
     GRAPH_BATCH_SIZE: int = Field(default=100)
     GRAPH_MAX_NODES: int = Field(default=1000)
     GRAPH_MAX_RELATIONSHIPS: int = Field(default=5000)
+
+    # Mem0 Settings
+    MEM0_ENABLE_GRAPH: bool = Field(default=True, env="MEM0_ENABLE_GRAPH")
+    MEM0_GRAPH_THRESHOLD: float = Field(default=0.7, env="MEM0_GRAPH_THRESHOLD")
+    MEM0_CUSTOM_PROMPT: Optional[str] = Field(default=None, env="MEM0_CUSTOM_PROMPT")
 
     # Rate Limiting
     RATE_LIMIT_CALLS: int = Field(default=100, env="RATE_LIMIT_CALLS")

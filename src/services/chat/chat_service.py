@@ -13,7 +13,7 @@ from src.models.request import FollowUpChatRequest
 from src.models.response import FollowUpChatResponse
 from src.models.database import ChatSession
 from src.models.database import Message
-from src.services.graph_service import GraphService
+from src.services.memory_service import MemoryService
 from src.services.auth_service import AuthService
 from src.services.base_client import BaseLLMClient
 from src.services.chat.query_decomposition import QueryDecompositionService
@@ -31,7 +31,7 @@ class ChatService(BaseLLMClient):
                 settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
             )
 
-            self.graph_service = GraphService()
+            self.memory_service = MemoryService()
 
             self._query_decomposition_service = None
             self._retrieval_evaluation_service = None
@@ -119,21 +119,21 @@ class ChatService(BaseLLMClient):
             vector_results = self._get_vector_results(
                 query, current_user_id, document_ids
             )
-            graph_results = self._get_graph_results(query)
+            memory_results = self._get_memory_results(query, str(current_user_id))
 
             if use_retrieval_evaluation:
                 vector_results = await self._apply_retrieval_evaluation(
                     query, vector_results, current_user_id, document_ids
                 )
 
-            context = self._merge_results(vector_results, graph_results)
+            context = self._merge_results(vector_results, memory_results)
             response = await self._generate_llm_response(query, context)
 
             return {
                 "message": response,
                 "context_used": {
                     "vector_results": vector_results,
-                    "graph_results": graph_results,
+                    "memory_results": memory_results,
                 },
             }
 
@@ -325,33 +325,38 @@ class ChatService(BaseLLMClient):
                 extra={"error": str(e)},
             )
 
-    def _get_graph_results(self, query: str) -> List[Dict[str, Any]]:
+    def _get_memory_results(self, query: str, user_id: str) -> List[Dict[str, Any]]:
         try:
-            logger.debug("Querying graph database")
-            results = self.graph_service.query_graph(query)
-            logger.info(f"Found {len(results)} relevant results in graph")
-            return results
+            logger.debug("Querying Mem0 memory store")
+            results = self.memory_service.search_memory(
+                query=query,
+                user_id=user_id,
+                limit=settings.TOP_K_RESULTS,
+                rerank=True
+            )
+            
+            memories = results.get("results", [])
+            logger.info(f"Found {len(memories)} relevant memories")
+            return memories
         except Exception as e:
-            logger.error(f"Error querying graph: {str(e)}", exc_info=True)
+            logger.error(f"Error querying memory: {str(e)}", exc_info=True)
             raise ExternalServiceException(
-                message="Failed to query graph",
-                service_name="GraphService",
+                message="Failed to query memory",
+                service_name="MemoryService",
                 extra={"error": str(e)},
             )
 
     def _merge_results(
-        self, vector_results: List[str], graph_results: List[Dict[str, Any]]
+        self, vector_results: List[str], memory_results: List[Dict[str, Any]]
     ) -> str:
         try:
-            graph_texts = []
-            for result in graph_results:
-                text = f"Type: {result.get('type', 'Unknown')}\n"
-                text += f"Properties: {', '.join([f'{k}: {v}' for k, v in result.get('properties', {}).items()])}\n"
-                if "relationships" in result:
-                    text += f"Relationships: {', '.join([r['type'] for r in result['relationships']])}"
-                graph_texts.append(text)
+            memory_texts = []
+            for result in memory_results:
+                memory_text = result.get("memory", "")
+                if memory_text:
+                    memory_texts.append(memory_text)
 
-            all_texts = vector_results[:3] + graph_texts[:3]
+            all_texts = vector_results[:3] + memory_texts[:3]
             return "\n\n".join(all_texts)
         except Exception as e:
             logger.error(f"Error merging results: {str(e)}", exc_info=True)
